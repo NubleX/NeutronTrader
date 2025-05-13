@@ -59,7 +59,3 @@ This application is for educational purposes. When using with real funds:
 - Start with small trade amounts
 - Monitor the bot's performance regularly
 - Never expose your API secret
-
-## License
-
-MIT
