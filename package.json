@@ -11,7 +11,7 @@
     "electron-build": "electron-builder"
   },
   "dependencies": {
-    "axios": "^0.28.0",
+    "axios": "^1.9.0",
     "binance-api-node": "^0.11.31",
     "buffer": "^6.0.3",
     "electron-is-dev": "^2.0.0",
@@ -36,7 +36,7 @@
     "stream-browserify": "^3.0.0",
     "tls-browserify": "^0.2.2",
     "url": "^0.11.4",
-    "wait-on": "^6.0.0"
+    "wait-on": "^8.0.3"
   },
   "browserslist": {
     "production": [
