@@ -5,6 +5,8 @@ import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import TradeSetup from './components/TradeSetup';
 import TradingHistory from './components/TradingHistory';
+// Import styles
+import './styles';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -24,17 +26,32 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Binance Trading Bot</h1>
+        <h1>NeutronTrader</h1>
         <nav>
-          <button onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-          <button onClick={() => setActiveTab('setup')}>Setup</button>
-          <button onClick={() => setActiveTab('history')}>History</button>
+          <button 
+            className={activeTab === 'dashboard' ? 'active' : ''} 
+            onClick={() => setActiveTab('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button 
+            className={activeTab === 'setup' ? 'active' : ''} 
+            onClick={() => setActiveTab('setup')}
+          >
+            Setup
+          </button>
+          <button 
+            className={activeTab === 'history' ? 'active' : ''} 
+            onClick={() => setActiveTab('history')}
+          >
+            History
+          </button>
         </nav>
       </header>
       
       <main>
         {!apiConfig.isConfigured && (
-          <div className="api-setup">
+          <div className="api-setup card">
             <h2>Set up your Binance API keys</h2>
             <form onSubmit={(e) => {
               e.preventDefault();
@@ -43,11 +60,11 @@ function App() {
                 apiSecret: e.target.apiSecret.value
               });
             }}>
-              <div>
+              <div className="form-group">
                 <label htmlFor="apiKey">API Key:</label>
                 <input type="text" id="apiKey" name="apiKey" />
               </div>
-              <div>
+              <div className="form-group">
                 <label htmlFor="apiSecret">API Secret:</label>
                 <input type="password" id="apiSecret" name="apiSecret" />
               </div>

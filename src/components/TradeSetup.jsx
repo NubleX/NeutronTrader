@@ -4,6 +4,11 @@
 import React, { useState, useEffect } from 'react';
 import { getStrategies } from '../utils/tradingStrategies';
 
+// Safely get the api object (for Electron)
+const getApi = () => {
+  return window.api || null;
+};
+
 function TradeSetup({ apiConfig }) {
   const [formData, setFormData] = useState({
     symbol: 'BTCUSDT',
@@ -17,11 +22,12 @@ function TradeSetup({ apiConfig }) {
   const [statusMessage, setStatusMessage] = useState('');
 
   const strategies = getStrategies();
+  const api = getApi();
 
   useEffect(() => {
     // Set up listeners for trading status messages
-    if (window.api) {
-      window.api.receive('trading-status', (data) => {
+    if (api) {
+      api.receive('trading-status', (data) => {
         console.log('Received trading status:', data);
         setFormData(prev => ({
           ...prev,
@@ -35,7 +41,7 @@ function TradeSetup({ apiConfig }) {
         );
       });
       
-      window.api.receive('trading-error', (error) => {
+      api.receive('trading-error', (error) => {
         console.error('Trading error:', error);
         setStatusMessage(`Error: ${error}`);
       });
@@ -57,9 +63,9 @@ function TradeSetup({ apiConfig }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (window.api) {
+    if (api) {
       // Send configuration to Electron main process using the secure bridge
-      window.api.send('start-trading-bot', {
+      api.send('start-trading-bot', {
         ...formData,
         apiConfig
       });
@@ -82,8 +88,8 @@ function TradeSetup({ apiConfig }) {
   };
 
   const handleStopBot = () => {
-    if (window.api) {
-      window.api.send('stop-trading-bot');
+    if (api) {
+      api.send('stop-trading-bot');
       setStatusMessage('Stopping trading bot...');
     } else {
       console.log('Running in browser mode - would stop trading');
@@ -95,7 +101,6 @@ function TradeSetup({ apiConfig }) {
     }
   };
 
-  // Rest of your component remains the same
   return (
     <div className="trade-setup">
       <h2>Trading Bot Setup</h2>
@@ -106,8 +111,106 @@ function TradeSetup({ apiConfig }) {
         </div>
       )}
       
-      <form onSubmit={handleSubmit}>
-        {/* Form groups as before */}
+      <form onSubmit={handleSubmit} className="card">
+        <div className="form-group">
+          <label htmlFor="symbol">Trading Pair:</label>
+          <select 
+            id="symbol" 
+            name="symbol" 
+            value={formData.symbol}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          >
+            <option value="BTCUSDT">BTC/USDT</option>
+            <option value="ETHUSDT">ETH/USDT</option>
+            <option value="BNBUSDT">BNB/USDT</option>
+            <option value="ADAUSDT">ADA/USDT</option>
+            <option value="DOGEUSDT">DOGE/USDT</option>
+          </select>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="strategy">Trading Strategy:</label>
+          <select 
+            id="strategy" 
+            name="strategy" 
+            value={formData.strategy}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          >
+            {Object.keys(strategies).map(strategy => (
+              <option key={strategy} value={strategy}>
+                {strategies[strategy].name}
+              </option>
+            ))}
+          </select>
+          
+          {formData.strategy && (
+            <p className="strategy-description">
+              {strategies[formData.strategy].description}
+            </p>
+          )}
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="amount">Trade Amount:</label>
+          <input 
+            type="number" 
+            id="amount" 
+            name="amount" 
+            step="0.0001"
+            min="0.0001"
+            value={formData.amount}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          />
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="interval">Time Interval:</label>
+          <select 
+            id="interval" 
+            name="interval" 
+            value={formData.interval}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          >
+            <option value="1m">1 minute</option>
+            <option value="5m">5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+            <option value="4h">4 hours</option>
+            <option value="1d">1 day</option>
+          </select>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="takeProfit">Take Profit (%):</label>
+          <input 
+            type="number" 
+            id="takeProfit" 
+            name="takeProfit" 
+            step="0.1"
+            min="0.1"
+            value={formData.takeProfit}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          />
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="stopLoss">Stop Loss (%):</label>
+          <input 
+            type="number" 
+            id="stopLoss" 
+            name="stopLoss" 
+            step="0.1"
+            min="0.1"
+            value={formData.stopLoss}
+            onChange={handleChange}
+            disabled={formData.isActive}
+          />
+        </div>
         
         {!formData.isActive ? (
           <button type="submit" className="start-bot">Start Trading Bot</button>

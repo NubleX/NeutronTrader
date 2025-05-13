@@ -53,15 +53,15 @@ function TradingHistory({ apiConfig }) {
 
   const stats = calculateStats();
 
-  if (isLoading) return <div>Loading trade history...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (isLoading) return <div className="loading">Loading trade history...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="trading-history">
       <h2>Trading History</h2>
       
       <div className="filter-controls">
-        <div>
+        <div className="form-group">
           <label htmlFor="symbol">Symbol:</label>
           <select 
             id="symbol" 
@@ -76,7 +76,7 @@ function TradingHistory({ apiConfig }) {
           </select>
         </div>
         
-        <div>
+        <div className="form-group">
           <label htmlFor="dateRange">Date Range:</label>
           <select 
             id="dateRange" 

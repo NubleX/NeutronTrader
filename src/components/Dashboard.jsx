@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getAccountInfo, getPrices } from '../services/binanceService';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function Dashboard({ apiConfig }) {
   const [accountInfo, setAccountInfo] = useState(null);
@@ -37,13 +37,11 @@ function Dashboard({ apiConfig }) {
     return () => clearInterval(intervalId);
   }, [apiConfig, selectedPair]);
 
-  if (isLoading) return <div>Loading dashboard data...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (isLoading) return <div className="loading">Loading dashboard data...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
   return (
     <div className="dashboard">
-      <h2>Dashboard</h2>
-      
       <div className="balance-overview">
         <h3>Account Balance</h3>
         {accountInfo && accountInfo.balances && (
@@ -72,19 +70,21 @@ function Dashboard({ apiConfig }) {
         </select>
         
         {priceData.length > 0 && (
-          <LineChart width={800} height={400} data={priceData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" />
-            <YAxis domain={['auto', 'auto']} />
-            <Tooltip />
-            <Legend />
-            <Line 
-              type="monotone" 
-              dataKey="price" 
-              stroke="#8884d8" 
-              activeDot={{ r: 8 }} 
-            />
-          </LineChart>
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart data={priceData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis domain={['auto', 'auto']} />
+              <Tooltip />
+              <Legend />
+              <Line 
+                type="monotone" 
+                dataKey="price" 
+                stroke="#2962ff" 
+                activeDot={{ r: 8 }} 
+              />
+            </LineChart>
+          </ResponsiveContainer>
         )}
       </div>
     </div>
