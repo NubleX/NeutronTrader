@@ -1,3 +1,6 @@
+// NeutronTrader - a simple, user-friendly Binance trading bot.
+// Copyright (C) 2025  Igor Dunaev (NubleX)
+
 // Define different trading strategies
 
 export const getStrategies = () => {

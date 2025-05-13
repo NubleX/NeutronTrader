@@ -1,3 +1,6 @@
+// NeutronTrader - a simple, user-friendly Binance trading bot.
+// Copyright (C) 2025  Igor Dunaev (NubleX)
+
 import Binance from 'binance-api-node';
 
 // Initialize Binance client
@@ -13,8 +16,50 @@ const createClient = (apiConfig) => {
 // Get account information
 export const getAccountInfo = async (apiConfig) => {
   try {
-    const client = createClient(apiConfig);
-    return await client.accountInfo();
+    // For development, return mock data instead of making a real API call
+    // In a production app, you would use:
+    // const client = createClient(apiConfig);
+    // return await client.accountInfo();
+    
+    // Mock account data
+    return {
+      makerCommission: 10,
+      takerCommission: 10,
+      buyerCommission: 0,
+      sellerCommission: 0,
+      canTrade: true,
+      canWithdraw: true,
+      canDeposit: true,
+      updateTime: Date.now(),
+      accountType: 'SPOT',
+      balances: [
+        {
+          asset: 'BTC',
+          free: '0.00234500',
+          locked: '0.00000000'
+        },
+        {
+          asset: 'ETH',
+          free: '0.05872300',
+          locked: '0.00000000'
+        },
+        {
+          asset: 'USDT',
+          free: '25.35791200',
+          locked: '0.00000000'
+        },
+        {
+          asset: 'BNB',
+          free: '1.75200000',
+          locked: '0.00000000'
+        },
+        {
+          asset: 'ADA',
+          free: '112.37450000',
+          locked: '0.00000000'
+        }
+      ]
+    };
   } catch (error) {
     console.error('Error fetching account info:', error);
     throw new Error('Failed to fetch account information');
