@@ -3,6 +3,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStrategies } from '../utils/tradingStrategies';
+import { 
+  getAssetBalance, 
+  startTradingBot, 
+  stopTradingBot, 
+  registerTradingBotListeners 
+} from '../services/binanceService';
 
 // Safely get the api object (for Electron)
 const getApi = () => {
@@ -11,18 +17,55 @@ const getApi = () => {
 
 function TradeSetup({ apiConfig }) {
   const [formData, setFormData] = useState({
-    symbol: 'BTCUSDT',
+    symbol: 'BNBUSDT', // Default to BNB/USDT
     strategy: 'simpleMovingAverage',
-    amount: 0.001,
+    amount: 0.1, // Amount in BNB (or base asset)
     interval: '15m',
     takeProfit: 3.0, // percentage
     stopLoss: 2.0,   // percentage
     isActive: false
   });
   const [statusMessage, setStatusMessage] = useState('');
+  const [balances, setBalances] = useState({
+    base: { asset: 'BNB', free: 0 },
+    quote: { asset: 'USDT', free: 0 }
+  });
 
   const strategies = getStrategies();
   const api = getApi();
+
+  // Get current base and quote asset from symbol
+  const getAssets = (symbol) => {
+    // Assuming all symbols end with 'USDT'
+    const baseAsset = symbol.replace('USDT', '');
+    const quoteAsset = 'USDT';
+    return { baseAsset, quoteAsset };
+  };
+
+  // Define fetchBalances function to be reused
+  const fetchBalances = async () => {
+    if (apiConfig.isConfigured) {
+      try {
+        const { baseAsset, quoteAsset } = getAssets(formData.symbol);
+        
+        const baseBalance = await getAssetBalance(apiConfig, baseAsset);
+        const quoteBalance = await getAssetBalance(apiConfig, quoteAsset);
+        
+        setBalances({
+          base: { asset: baseAsset, free: baseBalance.free },
+          quote: { asset: quoteAsset, free: quoteBalance.free }
+        });
+      } catch (err) {
+        console.error('Error fetching balances:', err);
+        setStatusMessage(`Error fetching balances: ${err.message}`);
+      }
+    }
+  };
+
+  // Fetch balances when component mounts or symbol/apiConfig changes
+  useEffect(() => {
+    fetchBalances();
+  }, [apiConfig, formData.symbol]);
 
   useEffect(() => {
     // Set up listeners for trading status messages
@@ -36,8 +79,8 @@ function TradeSetup({ apiConfig }) {
         
         setStatusMessage(
           data.status === 'started' 
-            ? 'Trading bot started successfully' 
-            : 'Trading bot stopped'
+            ? `Trading bot started successfully. ${data.message || ''}` 
+            : `Trading bot stopped. ${data.message || ''}`
         );
       });
       
@@ -45,26 +88,60 @@ function TradeSetup({ apiConfig }) {
         console.error('Trading error:', error);
         setStatusMessage(`Error: ${error}`);
       });
+
+      api.receive('trade-executed', (data) => {
+        console.log('Trade executed:', data);
+        setStatusMessage(`Trade executed: ${data.side} ${data.quantity} ${data.symbol} at ${data.price}`);
+        
+        // Refresh balances after trade
+        fetchBalances();
+      });
     }
     
     return () => {
       // Cleanup could go here if needed
     };
-  }, []);
+  }, [apiConfig]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
-    });
+    
+    // If symbol is changed, update amount based on typical trade sizes
+    if (name === 'symbol') {
+      // Adjust the default amount based on the selected symbol
+      let defaultAmount;
+      switch (value) {
+        case 'BTCUSDT':
+          defaultAmount = 0.001; // Small BTC amount
+          break;
+        case 'ETHUSDT':
+          defaultAmount = 0.01; // Small ETH amount
+          break;
+        case 'BNBUSDT':
+          defaultAmount = 0.1; // Small BNB amount
+          break;
+        default:
+          defaultAmount = 1; // Default for other pairs
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        [name]: value,
+        amount: defaultAmount
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : 
+                type === 'number' ? parseFloat(value) : value
+      }));
+    }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     
     if (api) {
-      // Send configuration to Electron main process using the secure bridge
       api.send('start-trading-bot', {
         ...formData,
         apiConfig
@@ -72,42 +149,109 @@ function TradeSetup({ apiConfig }) {
       
       setStatusMessage('Starting trading bot...');
     } else {
-      console.log('Running in browser mode - would start trading with:', {
+      // Use the startTradingBot function for the browser environment
+      startTradingBot({
         ...formData,
         apiConfig
-      });
-      
-      // For browser testing only
-      setFormData({
-        ...formData,
-        isActive: true
-      });
-      
-      setStatusMessage('Browser mode: Trading bot would start (simulation)');
+      })
+        .then(response => {
+          setStatusMessage(response.message || 'Trading bot started successfully');
+          setFormData({
+            ...formData,
+            isActive: response.status === 'started'
+          });
+        })
+        .catch(error => {
+          setStatusMessage(`Error: ${error.message}`);
+        });
     }
   };
 
   const handleStopBot = () => {
     if (api) {
-      api.send('stop-trading-bot');
+      api.send('stop-trading-bot', {});
       setStatusMessage('Stopping trading bot...');
     } else {
-      console.log('Running in browser mode - would stop trading');
-      setFormData({
-        ...formData,
-        isActive: false
-      });
-      setStatusMessage('Browser mode: Trading bot would stop (simulation)');
+      // Use the stopTradingBot function for the browser environment
+      stopTradingBot()
+        .then(response => {
+          setStatusMessage(response.message || 'Trading bot stopped');
+          setFormData({
+            ...formData,
+            isActive: false
+          });
+        })
+        .catch(error => {
+          setStatusMessage(`Error: ${error.message}`);
+        });
     }
   };
 
+  // Add an effect to register trading bot event listeners for when electronAPI is available
+  useEffect(() => {
+    // Only register event listeners if the Electron API is available
+    if (window.electronAPI) {
+      // Register event listeners for the trading bot
+      const cleanup = registerTradingBotListeners({
+        onStatus: (data) => {
+          console.log('Received trading status:', data);
+          setFormData(prev => ({
+            ...prev,
+            isActive: data.status === 'started'
+          }));
+          
+          setStatusMessage(
+            data.status === 'started' 
+              ? `Trading bot started successfully. ${data.message || ''}` 
+              : `Trading bot stopped. ${data.message || ''}`
+          );
+        },
+        
+        onError: (error) => {
+          console.error('Trading error:', error);
+          setStatusMessage(`Error: ${error}`);
+        },
+        
+        onTradeExecuted: (data) => {
+          console.log('Trade executed:', data);
+          setStatusMessage(`Trade executed: ${data.side} ${data.quantity} ${data.symbol} at ${data.price}`);
+          
+          // Refresh balances after trade
+          fetchBalances();
+        }
+      });
+      
+      // Clean up event listeners when component unmounts
+      return cleanup;
+    }
+    
+    // If electronAPI isn't available, just return an empty cleanup function
+    return () => {};
+  }, []);
+
   return (
     <div className="trade-setup">
-      <h2>Trading Bot Setup</h2>
+      <h2>Trading Bot Setup for Binance Spot Testnet</h2>
       
       {statusMessage && (
         <div className={`status-message ${formData.isActive ? 'active' : ''}`}>
           {statusMessage}
+        </div>
+      )}
+      
+      {apiConfig.isConfigured && (
+        <div className="balances-card card">
+          <h3>Available Balances</h3>
+          <div className="balances">
+            <div className="balance-item">
+              <span>{balances.base.asset}:</span>
+              <span>{balances.base.free.toFixed(8)}</span>
+            </div>
+            <div className="balance-item">
+              <span>{balances.quote.asset}:</span>
+              <span>{balances.quote.free.toFixed(2)}</span>
+            </div>
+          </div>
         </div>
       )}
       
@@ -121,11 +265,9 @@ function TradeSetup({ apiConfig }) {
             onChange={handleChange}
             disabled={formData.isActive}
           >
+            <option value="BNBUSDT">BNB/USDT</option>
             <option value="BTCUSDT">BTC/USDT</option>
             <option value="ETHUSDT">ETH/USDT</option>
-            <option value="BNBUSDT">BNB/USDT</option>
-            <option value="ADAUSDT">ADA/USDT</option>
-            <option value="DOGEUSDT">DOGE/USDT</option>
           </select>
         </div>
         
@@ -153,17 +295,66 @@ function TradeSetup({ apiConfig }) {
         </div>
         
         <div className="form-group">
-          <label htmlFor="amount">Trade Amount:</label>
+          <label htmlFor="amount">Trade Amount ({balances.base.asset}):</label>
           <input 
             type="number" 
             id="amount" 
             name="amount" 
-            step="0.0001"
-            min="0.0001"
+            step="0.001"
+            min="0.001"
+            max={balances.base.free}
             value={formData.amount}
             onChange={handleChange}
             disabled={formData.isActive}
           />
+          {balances.base.free > 0 && (
+            <div className="balance-hint">
+              <button 
+                type="button" 
+                className="balance-percent-btn"
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  amount: Math.floor(balances.base.free * 0.25 * 1000) / 1000
+                }))}
+                disabled={formData.isActive}
+              >
+                25%
+              </button>
+              <button 
+                type="button" 
+                className="balance-percent-btn"
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  amount: Math.floor(balances.base.free * 0.5 * 1000) / 1000
+                }))}
+                disabled={formData.isActive}
+              >
+                50%
+              </button>
+              <button 
+                type="button" 
+                className="balance-percent-btn"
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  amount: Math.floor(balances.base.free * 0.75 * 1000) / 1000
+                }))}
+                disabled={formData.isActive}
+              >
+                75%
+              </button>
+              <button 
+                type="button" 
+                className="balance-percent-btn"
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  amount: Math.floor(balances.base.free * 0.99 * 1000) / 1000 // 99% to avoid rounding issues
+                }))}
+                disabled={formData.isActive}
+              >
+                Max
+              </button>
+            </div>
+          )}
         </div>
         
         <div className="form-group">
@@ -213,7 +404,13 @@ function TradeSetup({ apiConfig }) {
         </div>
         
         {!formData.isActive ? (
-          <button type="submit" className="start-bot">Start Trading Bot</button>
+          <button 
+            type="submit" 
+            className="start-bot"
+            disabled={!apiConfig.isConfigured}
+          >
+            Start Trading Bot on Testnet
+          </button>
         ) : (
           <button type="button" className="stop-bot" onClick={handleStopBot}>
             Stop Trading Bot
@@ -223,12 +420,19 @@ function TradeSetup({ apiConfig }) {
       
       {formData.isActive && (
         <div className="bot-status active">
-          <h3>Bot is currently active</h3>
+          <h3>Bot is currently active on Binance Spot Testnet</h3>
           <p>Trading {formData.symbol} using {strategies[formData.strategy].name} strategy</p>
-          <p>Amount per trade: {formData.amount}</p>
+          <p>Amount per trade: {formData.amount} {balances.base.asset}</p>
           <p>Checking market every: {formData.interval}</p>
+          <p>Take profit: {formData.takeProfit}% / Stop loss: {formData.stopLoss}%</p>
         </div>
       )}
+
+      <div className="testnet-warning card">
+        <h3>Testnet Warning</h3>
+        <p>You're connected to the Binance Spot Testnet. No real funds will be used.</p>
+        <p>To get testnet tokens, visit: <a href="https://testnet.binance.vision/" target="_blank" rel="noopener noreferrer">https://testnet.binance.vision/</a> and use the faucet.</p>
+      </div>
     </div>
   );
 }

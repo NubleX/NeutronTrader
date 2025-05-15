@@ -28,3 +28,7 @@ Thumbs.db
 # Logs
 logs
 *.log
+
+testnetapi
+testnetconnection.js
+main_backup.js

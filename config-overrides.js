@@ -1,4 +1,3 @@
-// Add 'vm' to config-overrides.js
 const webpack = require('webpack');
 
 module.exports = function override(config) {
@@ -12,19 +11,23 @@ module.exports = function override(config) {
     https: require.resolve('https-browserify'),
     url: require.resolve('url'),
     buffer: require.resolve('buffer'),
-    vm: require.resolve('vm-browserify'),
+    vm: require.resolve('vm-browserify'), 
     fs: false,
     net: false,
     tls: false,
+    path: require.resolve('path-browserify'),
+    process: require.resolve('process/browser'),
+    zlib: require.resolve('browserify-zlib'),
   };
 
-  // Add buffer plugin
-  config.plugins.push(
+  // Add plugins
+  config.plugins = [
+    ...config.plugins,
     new webpack.ProvidePlugin({
       process: 'process/browser',
       Buffer: ['buffer', 'Buffer'],
-    })
-  );
+    }),
+  ];
 
   return config;
 };
