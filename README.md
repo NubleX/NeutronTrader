@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" alt="NeutronTrader Logo" width="200"/>
+  <img src="assets/logo.png" alt="NeutronTrader Logo" width="500"/>
   <h1>NeutronTrader</h1>
   <p>A simple, user-friendly Binance trading bot built with Electron and React</p>
 
