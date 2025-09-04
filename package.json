@@ -31,7 +31,7 @@
     "browserify-zlib": "^0.2.0",
     "concurrently": "^7.0.0",
     "crypto-browserify": "^3.12.1",
-    "electron": "^36.2.0",
+    "electron": "^36.8.1",
     "electron-builder": "^26.0.12",
     "net": "^1.0.2",
     "stream-browserify": "^3.0.0",
