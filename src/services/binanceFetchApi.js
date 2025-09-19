@@ -1,3 +1,5 @@
+// NeutronTrader - a simple, user-friendly Binance trading bot.
+// Copyright (C) 2025  Igor Dunaev (NubleX)
 // src/services/binanceFetchApi.js - Using fetch instead of axios
 // Base URL for Binance Testnet
 const BASE_URL = 'https://testnet.binance.vision';
@@ -10,17 +12,17 @@ async function createSignature(queryString, apiSecret) {
   const encoder = new TextEncoder();
   const key = encoder.encode(apiSecret);
   const data = encoder.encode(queryString);
-  
+
   const cryptoKey = await window.crypto.subtle.importKey(
     'raw', key,
     { name: 'HMAC', hash: 'SHA-256' },
     false, ['sign']
   );
-  
+
   const signature = await window.crypto.subtle.sign(
     'HMAC', cryptoKey, data
   );
-  
+
   // Convert to hex string
   return Array.from(new Uint8Array(signature))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -41,7 +43,7 @@ async function handleResponse(response) {
     error.response = { data: errorData };
     throw error;
   }
-  
+
   return await response.json();
 }
 
@@ -57,7 +59,7 @@ const BinanceFetchApi = {
       throw error;
     }
   },
-  
+
   // Get server time
   time: async () => {
     try {
@@ -68,7 +70,7 @@ const BinanceFetchApi = {
       throw error;
     }
   },
-  
+
   // Get account information (authenticated)
   accountInfo: async (apiConfig) => {
     try {
@@ -76,15 +78,15 @@ const BinanceFetchApi = {
       const params = {
         timestamp: Date.now()
       };
-      
+
       // Create query string
       const queryString = Object.entries(params)
         .map(([key, value]) => `${key}=${value}`)
         .join('&');
-      
+
       // Sign the request
       const signature = await createSignature(queryString, apiConfig.apiSecret);
-      
+
       // Make the request
       const response = await fetch(
         `${BASE_URL}/api/v3/account?${queryString}&signature=${signature}`,
@@ -95,19 +97,19 @@ const BinanceFetchApi = {
           }
         }
       );
-      
+
       return await handleResponse(response);
     } catch (error) {
       console.error('Account info error:', error);
       throw error;
     }
   },
-  
+
   // Get market prices
   prices: async (symbol = null) => {
     try {
-      const url = `${BASE_URL}/api/v3/ticker/price` + 
-                 (symbol ? `?symbol=${symbol}` : '');
+      const url = `${BASE_URL}/api/v3/ticker/price` +
+        (symbol ? `?symbol=${symbol}` : '');
       const response = await fetch(url);
       return await handleResponse(response);
     } catch (error) {
@@ -115,7 +117,7 @@ const BinanceFetchApi = {
       throw error;
     }
   },
-  
+
   // Get candlestick data
   candles: async (symbol, interval, options = {}) => {
     try {
@@ -125,16 +127,16 @@ const BinanceFetchApi = {
         interval,
         ...options
       };
-      
+
       // Create query string
       const queryString = Object.entries(params)
         .map(([key, value]) => `${key}=${value}`)
         .join('&');
-      
+
       // Make the request
       const response = await fetch(`${BASE_URL}/api/v3/klines?${queryString}`);
       const data = await handleResponse(response);
-      
+
       // Transform response data to a more usable format
       return data.map(candle => ({
         openTime: candle[0],
@@ -154,7 +156,7 @@ const BinanceFetchApi = {
       throw error;
     }
   },
-  
+
   // Get user trades (authenticated)
   myTrades: async (apiConfig, symbol, options = {}) => {
     try {
@@ -164,15 +166,15 @@ const BinanceFetchApi = {
         ...options,
         timestamp: Date.now()
       };
-      
+
       // Create query string
       const queryString = Object.entries(params)
         .map(([key, value]) => `${key}=${value}`)
         .join('&');
-      
+
       // Sign the request
       const signature = await createSignature(queryString, apiConfig.apiSecret);
-      
+
       // Make the request
       const response = await fetch(
         `${BASE_URL}/api/v3/myTrades?${queryString}&signature=${signature}`,
@@ -183,14 +185,14 @@ const BinanceFetchApi = {
           }
         }
       );
-      
+
       return await handleResponse(response);
     } catch (error) {
       console.error('My trades error:', error);
       throw error;
     }
   },
-  
+
   // Execute a market order (authenticated)
   marketOrder: async (apiConfig, symbol, side, quantity) => {
     try {
@@ -202,15 +204,15 @@ const BinanceFetchApi = {
         quantity,
         timestamp: Date.now()
       };
-      
+
       // Create query string
       const queryString = Object.entries(params)
         .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
         .join('&');
-      
+
       // Sign the request
       const signature = await createSignature(queryString, apiConfig.apiSecret);
-      
+
       // Make the request
       const response = await fetch(
         `${BASE_URL}/api/v3/order`,
@@ -223,7 +225,7 @@ const BinanceFetchApi = {
           body: `${queryString}&signature=${signature}`
         }
       );
-      
+
       return await handleResponse(response);
     } catch (error) {
       console.error('Market order error:', error);

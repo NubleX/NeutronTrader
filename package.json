@@ -1,6 +1,6 @@
 {
-  "name": "NeutronTrader",
-  "version": "1.0.0",
+  "name": "neutron-trader",
+  "version": "2.0.0",
   "description": "A simple trading bot for Binance using Electron and React",
   "main": "electron/main.js",
   "scripts": {
