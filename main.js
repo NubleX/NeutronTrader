@@ -3,22 +3,27 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+// normalize electron-is-dev (works if module exports boolean or a { default: boolean } shape)
+const _isDevModule = require('electron-is-dev');
+const isDev = (typeof _isDevModule === 'boolean')
+  ? _isDevModule
+  : Boolean(_isDevModule && (_isDevModule.default ?? _isDevModule));
 const url = require('url');
-const isDev = process.env.NODE_ENV !== 'production';
-const BinanceApi = require('./binanceApi');
+const BinanceAPI = require('./electron/binanceApi');
 const schedule = require('node-schedule');
-const { storageService } = require('../src/services/storageService');
+const { storageService } = require('./src/services/storageService');
 const activeBots = new Map();
 let mainWindow
 
-function createWindow() {
+async function createWindow() {
   try {
     mainWindow = new BrowserWindow({
       width: 1400,
       height: 900,
       minWidth: 1200,
       minHeight: 800,
-      icon: path.join(__dirname, '../build-resources/icon.png'),
+      // icon must point to an icon file, not preload.js
+      icon: path.join(__dirname, "electron", "icon.ico"),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -38,8 +43,8 @@ function createWindow() {
         slashes: true
       });
 
-    mainWindow.loadURL(startUrl);
-
+    console.log('Launching Electron (isDev=%s) loading URL: %s', isDev, startUrl);
+    await mainWindow.loadURL(startUrl);
     // Show window when ready to prevent visual flash
     mainWindow.once('ready-to-show', () => {
       mainWindow.show();
@@ -116,7 +121,7 @@ app.whenReady().then(async () => {
     console.log('Storage service initialized');
 
     // Create main window
-    createWindow();
+    await createWindow();
 
     // Set up application menu
     setupApplicationMenu();
@@ -187,132 +192,134 @@ function withErrorHandling(operation, context = {}) {
   };
 }
 
-// ============================
-// IPC Handlers for Binance API
-// ============================
+// ===== BINANCE API IPC HANDLERS =====
 
-// Test API connectivity
-ipcMain.handle('binance:ping', withErrorHandling(async () => {
-  const result = await BinanceApi.ping();
-  return { success: true, data: result };
-}, { operation: 'ping' }));
-
-// Get account information with caching
-ipcMain.handle('binance:accountInfo', withErrorHandling(async (event, apiConfig) => {
-  const result = await BinanceApi.accountInfo(apiConfig);
-
-  // Cache account info for offline access
-  await storageService.saveSetting('lastAccountInfo', {
-    data: result,
-    timestamp: Date.now()
-  });
-
-  return { success: true, data: result };
-}, { operation: 'account_info' }));
-
-// Get market prices with caching
-ipcMain.handle('binance:prices', withErrorHandling(async (event, symbol) => {
-  const result = await BinanceApi.prices(symbol);
-
-  // Cache price data
-  await storageService.saveSetting(`price_${symbol}`, {
-    data: result,
-    timestamp: Date.now()
-  });
-
-  return { success: true, data: result };
-}, { operation: 'get_prices' }));
-
-// Get candles data with persistence
-ipcMain.handle('binance:candles', withErrorHandling(async (event, symbol, interval, options) => {
-  const result = await BinanceApi.candles(symbol, interval, options);
-
-  // Transform and cache candle data
-  const formattedResult = result.map(candle => ({
-    openTime: candle[0],
-    open: parseFloat(candle[1]),
-    high: parseFloat(candle[2]),
-    low: parseFloat(candle[3]),
-    close: parseFloat(candle[4]),
-    volume: parseFloat(candle[5]),
-    closeTime: candle[6],
-    quoteAssetVolume: parseFloat(candle[7]),
-    numberOfTrades: candle[8],
-    takerBuyBaseAssetVolume: parseFloat(candle[9]),
-    takerBuyQuoteAssetVolume: parseFloat(candle[10])
-  }));
-
-  // Save candle data for analysis
-  await storageService.saveSetting(`candles_${symbol}_${interval}`, {
-    data: formattedResult,
-    timestamp: Date.now()
-  });
-
-  return { success: true, data: formattedResult };
-}, { operation: 'get_candles' }));
-
-// Get trade history with persistent storage
-ipcMain.handle('binance:myTrades', withErrorHandling(async (event, apiConfig, symbol, options) => {
-  const result = await BinanceApi.myTrades(apiConfig, symbol, options);
-
-  // Save trades to persistent storage
-  for (const trade of result) {
-    await storageService.saveTrade({
-      id: `${trade.id}_${symbol}`,
-      symbol: symbol,
-      orderId: trade.orderId,
-      price: parseFloat(trade.price),
-      qty: parseFloat(trade.qty),
-      quoteQty: parseFloat(trade.quoteQty),
-      commission: parseFloat(trade.commission),
-      commissionAsset: trade.commissionAsset,
-      timestamp: trade.time,
-      side: trade.isBuyer ? 'BUY' : 'SELL',
-      isMaker: trade.isMaker,
-      source: 'binance_api'
-    });
+// Ping endpoint - test basic connectivity
+ipcMain.handle('binance:ping', async () => {
+  try {
+    console.log('Main process: Ping request received');
+    const result = await BinanceAPI.ping();
+    console.log('Main process: Ping successful');
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Main process: Ping failed:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'PING_ERROR'
+    };
   }
+});
 
-  return { success: true, data: result };
-}, { operation: 'get_trades' }));
+// Get account information (requires API keys)
+ipcMain.handle('binance:accountInfo', async (event, apiConfig) => {
+  try {
+    console.log('Main process: Account info request received');
 
-// Execute market order with full logging
-ipcMain.handle('binance:marketOrder', withErrorHandling(async (event, apiConfig, symbol, side, quantity) => {
-  const orderData = {
-    symbol,
-    side,
-    quantity,
-    timestamp: Date.now(),
-    type: 'MARKET'
-  };
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      // Use embedded API keys if not provided
+      apiConfig = {
+        apiKey: 'teGoWtR4oUftjl1ME8rDAc8iEmFfNoUsRhF0k8Qfg4u8JhsQmRwhKZUxeTKkDpFB',
+        apiSecret: 'xfY8z9W88O0JBef5RRqQRiVcJ8hKJ9jqC7LKaCWx1k6GYukMg8T7v2kZEQNVnoWI'
+      };
+    }
 
-  // Log order attempt
-  console.log(`Executing ${side} order:`, orderData);
+    const result = await BinanceAPI.getAccountInfo(apiConfig);
+    console.log('Main process: Account info retrieved successfully');
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Main process: Account info failed:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'ACCOUNT_ERROR'
+    };
+  }
+});
 
-  const result = await BinanceApi.marketOrder(apiConfig, symbol, side, quantity);
+// Get current prices for a symbol
+ipcMain.handle('binance:prices', async (event, symbol) => {
+  try {
+    console.log(`Main process: Price request for ${symbol}`);
+    const result = await BinanceAPI.getCurrentPrice(symbol);
+    console.log(`Main process: Price data retrieved for ${symbol}`);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(`Main process: Price request failed for ${symbol}:`, error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'PRICE_ERROR'
+    };
+  }
+});
 
-  // Save executed trade to storage
-  await storageService.saveTrade({
-    id: `${result.orderId}_${symbol}`,
-    symbol: symbol,
-    orderId: result.orderId,
-    side: side,
-    type: 'MARKET',
-    quantity: parseFloat(quantity),
-    price: parseFloat(result.fills?.[0]?.price || 0),
-    status: result.status,
-    timestamp: Date.now(),
-    executedQty: parseFloat(result.executedQty || 0),
-    cummulativeQuoteQty: parseFloat(result.cummulativeQuoteQty || 0),
-    source: 'trading_bot'
-  });
 
-  return { success: true, data: result };
-}, { operation: 'market_order' }));
 
-// ============================
-// Trading Bot IPC Handlers
-// ============================
+// Get candlestick data
+ipcMain.handle('binance:candles', async (event, symbol, interval, options = {}) => {
+  try {
+    console.log(`Main process: Candles request for ${symbol} (${interval})`);
+    const result = await BinanceAPI.getCandlesticks(symbol, interval, options);
+    console.log(`Main process: Candles data retrieved for ${symbol}`);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(`Main process: Candles request failed for ${symbol}:`, error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'CANDLES_ERROR'
+    };
+  }
+});
+
+// Get trade history (requires API keys)
+ipcMain.handle('binance:myTrades', async (event, apiConfig, symbol, options = {}) => {
+  try {
+    console.log(`Main process: Trade history request for ${symbol}`);
+
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API configuration missing');
+    }
+
+    const result = await BinanceAPI.getMyTrades(apiConfig, symbol, options);
+    console.log(`Main process: Trade history retrieved for ${symbol}`);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(`Main process: Trade history failed for ${symbol}:`, error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'TRADES_ERROR'
+    };
+  }
+});
+
+// Execute market order (requires API keys)
+ipcMain.handle('binance:marketOrder', async (event, apiConfig, symbol, side, quantity) => {
+  try {
+    console.log(`Main process: Market order request - ${side} ${quantity} ${symbol}`);
+
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API configuration missing');
+    }
+
+    const result = await BinanceAPI.createMarketOrder(apiConfig, symbol, side, quantity);
+    console.log(`Main process: Market order executed successfully`);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Main process: Market order failed:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      code: error.code || 'ORDER_ERROR'
+    };
+  }
+});
+
+// ===== TRADING BOT IPC HANDLERS =====
+
+let activeTradingBots = new Map();
 
 // Start trading bot with full configuration persistence
 ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
@@ -342,7 +349,7 @@ ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
 
   // Test API connection before starting
   try {
-    await BinanceApi.accountInfo(config.apiConfig);
+    await BinanceAPI.accountInfo(config.apiConfig);
     console.log('✓ API connection verified');
   } catch (err) {
     console.error('✗ API connection failed:', err.message);
@@ -582,12 +589,12 @@ async function executeTradeStrategy(config, botState) {
 
   try {
     // Get current price
-    const priceResult = await BinanceApi.prices(config.symbol);
+    const priceResult = await BinanceAPI.prices(config.symbol);
     const currentPrice = parseFloat(priceResult.price);
     console.log(`Current price for ${config.symbol}: ${currentPrice}`);
 
     // Get historical candles for analysis
-    const candlesResult = await BinanceApi.candles(config.symbol, config.interval, { limit: 50 });
+    const candlesResult = await BinanceAPI.candles(config.symbol, config.interval, { limit: 50 });
 
     // Format candles data
     const candles = candlesResult.map(candle => ({
@@ -605,7 +612,7 @@ async function executeTradeStrategy(config, botState) {
     }));
 
     // Get account info to check balances
-    const accountInfo = await BinanceApi.accountInfo(config.apiConfig);
+    const accountInfo = await BinanceAPI.accountInfo(config.apiConfig);
 
     // Execute strategy based on config
     let signal;
@@ -697,11 +704,11 @@ async function executeTradeStrategy(config, botState) {
 
   try {
     // Get current price
-    const priceResult = await BinanceApi.prices(config.symbol);
+    const priceResult = await BinanceAPI.prices(config.symbol);
     const currentPrice = parseFloat(priceResult.price);
 
     // Get historical candles for analysis
-    const candlesResult = await BinanceApi.candles(config.symbol, config.interval, { limit: 50 });
+    const candlesResult = await BinanceAPI.candles(config.symbol, config.interval, { limit: 50 });
 
     // Format candles data (same as before)
     const candles = candlesResult.map(candle => ({
@@ -809,4 +816,13 @@ process.on('unhandledRejection', (reason, promise) => {
   // Log the error but don't crash the app
 });
 
-console.log('Enhanced NeutronTrader main process initialized');
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception in main process:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection in main process:', reason);
+});
+
+console.log('Main process: IPC handlers registered successfully');
