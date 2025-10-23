@@ -7,6 +7,7 @@
     "start": "react-app-rewired start",
     "react-start": "react-app-rewired start",
     "electron-start": "wait-on http://localhost:3000 && electron .",
+    "dev": "concurrently \"npm run react-start\" \"npm run electron-start\"",
     "build": "react-app-rewired build",
     "electron-build": "electron-builder"
   },
