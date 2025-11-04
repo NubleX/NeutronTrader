@@ -3,6 +3,7 @@
 This roadmap outlines the planned features and improvements for NeutronTrader. We welcome contributions in any of these areas!
 
 ## v0.2.0 (Next Release)
+
 - [ ] Implement persistent storage for trading history
 - [ ] Add more trading pairs
 - [ ] Improve error handling and user feedback
@@ -10,6 +11,7 @@ This roadmap outlines the planned features and improvements for NeutronTrader. W
 - [ ] Create proper installer packages for Windows/Mac/Linux
 
 ## v0.3.0
+
 - [ ] Implement additional trading strategies:
   - [ ] MACD (Moving Average Convergence Divergence)
   - [ ] Fibonacci Retracement
@@ -20,6 +22,7 @@ This roadmap outlines the planned features and improvements for NeutronTrader. W
 - [ ] Support for trading on multiple pairs simultaneously
 
 ## v0.4.0
+
 - [ ] Implement advanced risk management features
 - [ ] Add TradingView integration for advanced charting
 - [ ] Create strategy performance metrics and reporting
@@ -27,6 +30,7 @@ This roadmap outlines the planned features and improvements for NeutronTrader. W
 - [ ] Add user-configurable alerts and notifications
 
 ## v1.0.0
+
 - [ ] Full Binance API support (main network, with extensive safety measures)
 - [ ] Advanced portfolio management
 - [ ] Performance optimization for long-running sessions
@@ -34,6 +38,7 @@ This roadmap outlines the planned features and improvements for NeutronTrader. W
 - [ ] Complete documentation and tutorials
 
 ## Beyond v1.0
+
 - [ ] Support for additional exchanges
 - [ ] Mobile companion app
 - [ ] Machine learning strategy optimization
