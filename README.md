@@ -33,10 +33,12 @@ NeutronTrader is a desktop application that allows users to connect to the Binan
 ## Installation
 
 ### Prerequisites
+
 - Node.js v16 or higher ([Download](https://nodejs.org/))
 - npm (comes with Node.js)
 
 ### Setup
+
 ```bash
 # Clone the repository
 git clone https://github.com/NubleX/NeutronTrader.git
@@ -51,21 +53,27 @@ npm install
 ### Running the Application
 
 #### Option 1: Single Command (Recommended)
+
 ```bash
 npm run dev
 ```
+
 This starts both the React dev server and Electron app automatically in one command.
 
 #### Option 2: Manual Start (Two Terminals)
+
 If you prefer to run the processes separately:
 
 **Terminal 1 - Start React Dev Server:**
+
 ```bash
 npm run react-start
 ```
+
 Wait for the "Compiled successfully!" message.
 
 **Terminal 2 - Start Electron App:**
+
 ```bash
 npm run electron-start
 ```
@@ -73,6 +81,7 @@ npm run electron-start
 The application will open in an Electron desktop window and load from `http://localhost:3000`.
 
 ### Building for Production
+
 ```bash
 # Build React app
 npm run build
@@ -86,6 +95,7 @@ npm run electron-build
 #### Port 3000 Already in Use
 
 **Windows:**
+
 ```powershell
 # Find the process using port 3000
 netstat -ano | findstr :3000
@@ -95,12 +105,14 @@ taskkill /PID <PID> /F
 ```
 
 **Mac/Linux:**
+
 ```bash
 # Find and kill the process using port 3000
 lsof -ti:3000 | xargs kill -9
 ```
 
 #### Module Not Found Errors
+
 ```bash
 # Clear cache and reinstall dependencies
 rm -rf node_modules package-lock.json
@@ -108,6 +120,7 @@ npm install
 ```
 
 #### Electron Window Not Opening
+
 - Make sure the React dev server compiled successfully (check Terminal 1)
 - Verify nothing else is using port 3000
 - Try closing all terminals and running `npm run dev` again
@@ -146,9 +159,9 @@ NeutronTrader uses Electron's main process to make API calls to Binance, avoidin
 
 We welcome contributions from developers of all skill levels! Check out our [CONTRIBUTING.md](CONTRIBUTING.md) guide to get started.
 
-### Contributors:
+### Contributors
 
-**Muhammad Hasnain** 
+### Muhammad Hasnain
 
 **Good First Issues**: Looking to make your first contribution? Check issues labeled with [`good first issue`](https://github.com/yourusername/NeutronTrader/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) - these are specifically designed for new contributors.
 
@@ -158,7 +171,7 @@ See our [roadmap](ROADMAP.md) for planned features and improvements.
 
 NeutronTrader currently connects only to the Binance Testnet, which uses test tokens with no real value. The application handles API keys securely, storing them only in the local environment.
 
-**⚠️ Warning**: This is an alpha release intended for testing and educational purposes. Do not use with real funds or API keys from the main Binance network.
+**Warning**: This is an alpha release intended for testing and educational purposes. Do not use with real funds or API keys from the main Binance network.
 
 ## Acknowledgements
 

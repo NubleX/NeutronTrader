@@ -13,11 +13,13 @@ By participating in this project, you are expected to uphold our Code of Conduct
 This section guides you through submitting a bug report. Following these guidelines helps maintainers and the community understand your report, reproduce the behavior, and find related reports.
 
 **Before Submitting A Bug Report:**
+
 - Check the [issues](https://github.com/yourusername/NeutronTrader/issues) to see if the bug has already been reported
 - Make sure you're using the latest version
 - Check if the bug persists in different environments (OS, Node.js version, etc.)
 
 **How to Submit A Good Bug Report:**
+
 - Use a clear and descriptive title
 - Describe the exact steps to reproduce the problem
 - Provide specific examples (e.g., API keys with permissions removed)
@@ -47,20 +49,28 @@ Unsure where to begin contributing? Look for issues labeled with `good first iss
 **Setting up the development environment:**
 
 1. Fork the repository
-2. Clone your fork: 
+
+2. Clone your fork:
+
    ```bash
    git clone https://github.com/your-username/NeutronTrader.git
    ```
+
 3. Install dependencies:
+
    ```bash
    cd NeutronTrader
    npm install
    ```
+
 4. Create a new branch:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 5. Start the application:
+
    ```bash
    npm start
    ```
@@ -68,6 +78,7 @@ Unsure where to begin contributing? Look for issues labeled with `good first iss
 ### Pull Requests
 
 The process described here has several goals:
+
 - Maintain quality
 - Fix problems that are important to users
 - Engage the community
