@@ -146,6 +146,10 @@ NeutronTrader uses Electron's main process to make API calls to Binance, avoidin
 
 We welcome contributions from developers of all skill levels! Check out our [CONTRIBUTING.md](CONTRIBUTING.md) guide to get started.
 
+### Contributors:
+
+**Muhammad Hasnain** 
+
 **Good First Issues**: Looking to make your first contribution? Check issues labeled with [`good first issue`](https://github.com/yourusername/NeutronTrader/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) - these are specifically designed for new contributors.
 
 See our [roadmap](ROADMAP.md) for planned features and improvements.
