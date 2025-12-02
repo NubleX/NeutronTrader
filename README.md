@@ -179,3 +179,5 @@ NeutronTrader currently connects only to the Binance Testnet, which uses test to
 - [Electron](https://www.electronjs.org/) for the desktop application framework
 - [React](https://reactjs.org/) for the UI components
 - [Recharts](https://recharts.org/) for the charting library
+
+Visit https://www.idarti.com
