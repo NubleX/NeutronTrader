@@ -11,7 +11,7 @@ const isDev = (typeof _isDevModule === 'boolean')
 const url = require('url');
 const BinanceAPI = require('./electron/binanceApi');
 const schedule = require('node-schedule');
-const { storageService } = require('./src/services/storageService');
+const { storageService } = require('./electron/storageService');
 const activeBots = new Map();
 let mainWindow
 
