@@ -6,49 +6,47 @@ import Dashboard from './components/Dashboard';
 import TradeSetup from './components/TradeSetup';
 import TradingHistory from './components/TradingHistory';
 import DiagnosticTest from './components/DiagnosticTest';
+import ArbitragePanel from './components/ArbitragePanel';
+import SniperPanel from './components/SniperPanel';
+import WalletManager from './components/WalletManager';
+import ExchangeConfig from './components/ExchangeConfig';
 import './styles';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [apiConfig, setApiConfig] = useState(() => {
-    // Try to load saved API config from localStorage
-    const savedConfig = localStorage.getItem('neutronTraderApiConfig');
-    if (savedConfig) {
-      try {
-        return JSON.parse(savedConfig);
-      } catch (e) {
-        console.error('Failed to parse saved API config:', e);
-      }
-    }
-    return {
-      apiKey: '',
-      apiSecret: '',
-      isConfigured: false
-    };
+  const [apiConfig, setApiConfig] = useState({
+    apiKey: '',
+    apiSecret: '',
+    isConfigured: false
   });
 
-  // Save API config to localStorage whenever it changes
+  // On mount, check if credentials are already stored in the vault
   useEffect(() => {
-    if (apiConfig.isConfigured) {
-      localStorage.setItem('neutronTraderApiConfig', JSON.stringify(apiConfig));
-    }
-  }, [apiConfig]);
+    const checkStoredCredentials = async () => {
+      if (window.electronAPI?.security?.loadCredentials) {
+        const result = await window.electronAPI.security.loadCredentials('binance');
+        if (result?.hasCredentials) {
+          // Credentials are in vault and adapter is configured — mark as configured
+          setApiConfig(prev => ({ ...prev, isConfigured: true }));
+        }
+      }
+    };
+    checkStoredCredentials();
+  }, []);
 
-  const handleConfigSave = (config) => {
-    setApiConfig({
-      ...config,
-      isConfigured: true
-    });
+  const handleConfigSave = async (config) => {
+    // Send keys to main process for vault storage — renderer keeps no plaintext keys
+    if (window.electronAPI?.security?.storeCredentials) {
+      await window.electronAPI.security.storeCredentials(
+        'binance', config.apiKey, config.apiSecret
+      );
+    }
+    // Only store a flag (no keys) in renderer state
+    setApiConfig({ apiKey: '***', apiSecret: '***', isConfigured: true });
   };
 
   const handleLogout = () => {
-    // Clear API config
-    setApiConfig({
-      apiKey: '',
-      apiSecret: '',
-      isConfigured: false
-    });
-    localStorage.removeItem('neutronTraderApiConfig');
+    setApiConfig({ apiKey: '', apiSecret: '', isConfigured: false });
   };
 
 return (
@@ -74,11 +72,35 @@ return (
         >
           History
         </button>
-        <button 
-          className={activeTab === 'diagnostic' ? 'active' : ''} 
+        <button
+          className={activeTab === 'diagnostic' ? 'active' : ''}
           onClick={() => setActiveTab('diagnostic')}
         >
           Diagnostic
+        </button>
+        <button
+          className={activeTab === 'arbitrage' ? 'active' : ''}
+          onClick={() => setActiveTab('arbitrage')}
+        >
+          Arbitrage
+        </button>
+        <button
+          className={activeTab === 'sniper' ? 'active' : ''}
+          onClick={() => setActiveTab('sniper')}
+        >
+          Sniper
+        </button>
+        <button
+          className={activeTab === 'wallets' ? 'active' : ''}
+          onClick={() => setActiveTab('wallets')}
+        >
+          Wallets
+        </button>
+        <button
+          className={activeTab === 'exchanges' ? 'active' : ''}
+          onClick={() => setActiveTab('exchanges')}
+        >
+          Exchanges
         </button>
         {apiConfig.isConfigured && (
           <button onClick={handleLogout} className="logout-btn">
@@ -153,6 +175,22 @@ return (
         
         {apiConfig.isConfigured && activeTab === 'history' && (
           <TradingHistory apiConfig={apiConfig} />
+        )}
+
+        {activeTab === 'arbitrage' && (
+          <ArbitragePanel />
+        )}
+
+        {activeTab === 'sniper' && (
+          <SniperPanel />
+        )}
+
+        {activeTab === 'wallets' && (
+          <WalletManager />
+        )}
+
+        {activeTab === 'exchanges' && (
+          <ExchangeConfig />
         )}
       </main>
     </div>

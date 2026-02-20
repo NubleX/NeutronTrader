@@ -227,21 +227,101 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Security utilities
   security: {
-    // Encrypt sensitive data
     encrypt: (data, password) =>
       ipcRenderer.invoke('security:encrypt', data, password),
-
-    // Decrypt sensitive data
     decrypt: (encryptedData, password) =>
       ipcRenderer.invoke('security:decrypt', encryptedData, password),
-
-    // Hash API keys for storage
     hashApiKey: (apiKey) =>
       ipcRenderer.invoke('security:hashApiKey', apiKey),
-
-    // Validate API key format
     validateApiKey: (apiKey) =>
-      ipcRenderer.invoke('security:validateApiKey', apiKey)
+      ipcRenderer.invoke('security:validateApiKey', apiKey),
+    storeCredentials: (exchange, apiKey, apiSecret, passphrase) =>
+      ipcRenderer.invoke('security:storeCredentials', exchange, apiKey, apiSecret, passphrase),
+    loadCredentials: (exchange) =>
+      ipcRenderer.invoke('security:loadCredentials', exchange)
+  },
+
+  // Price feed aggregator
+  priceFeed: {
+    start: (symbols, options) => ipcRenderer.invoke('pricefeed:start', symbols, options),
+    stop: () => ipcRenderer.invoke('pricefeed:stop'),
+    getSnapshot: () => ipcRenderer.invoke('pricefeed:snapshot'),
+    getSymbolPrices: (symbol) => ipcRenderer.invoke('pricefeed:symbolPrices', symbol)
+  },
+
+  // Multi-exchange API
+  exchange: {
+    configure: (exchange, config) => ipcRenderer.invoke('exchange:configure', { exchange, config }),
+    list: () => ipcRenderer.invoke('exchange:list'),
+    ping: (exchange) => ipcRenderer.invoke('exchange:ping', exchange),
+    getPrice: (exchange, symbol) => ipcRenderer.invoke('exchange:price', exchange, symbol),
+    getOrderBook: (exchange, symbol, limit) => ipcRenderer.invoke('exchange:orderbook', exchange, symbol, limit),
+    getCandles: (exchange, symbol, interval, options) => ipcRenderer.invoke('exchange:candles', exchange, symbol, interval, options),
+    getAccount: (exchange) => ipcRenderer.invoke('exchange:account', exchange),
+    marketOrder: (exchange, symbol, side, quantity) => ipcRenderer.invoke('exchange:marketOrder', exchange, symbol, side, quantity),
+    limitOrder: (exchange, symbol, side, quantity, price, timeInForce) => ipcRenderer.invoke('exchange:limitOrder', exchange, symbol, side, quantity, price, timeInForce),
+    cancelOrder: (exchange, symbol, orderId) => ipcRenderer.invoke('exchange:cancelOrder', exchange, symbol, orderId),
+    getSymbols: (exchange) => ipcRenderer.invoke('exchange:symbols', exchange),
+    // Arbitrage opportunities stream
+    onOpportunity: (callback) => {
+      ipcRenderer.on('arb:opportunity', (_, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('arb:opportunity');
+    },
+    // Listing alerts
+    onNewListing: (callback) => {
+      ipcRenderer.on('listing:new', (_, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('listing:new');
+    }
+  },
+
+  // Wallet/DeFi API
+  wallet: {
+    createWallet: (chain) => ipcRenderer.invoke('wallet:create', chain),
+    importWallet: (chain, privateKey) => ipcRenderer.invoke('wallet:import', chain, privateKey),
+    getAddress: (chain) => ipcRenderer.invoke('wallet:address', chain),
+    getBalance: (chain, address) => ipcRenderer.invoke('wallet:balance', chain, address),
+    listWallets: () => ipcRenderer.invoke('wallet:list'),
+    getPoolPrice: (chain, tokenA, tokenB) => ipcRenderer.invoke('defi:poolPrice', chain, tokenA, tokenB)
+  },
+
+  // Sniper API
+  sniper: {
+    start: (config) => ipcRenderer.invoke('sniper:start', config),
+    stop: () => ipcRenderer.invoke('sniper:stop'),
+    getHistory: () => ipcRenderer.invoke('sniper:history'),
+    updateConfig: (config) => ipcRenderer.invoke('sniper:config', config),
+    onAlert: (callback) => {
+      ipcRenderer.on('sniper:alert', (_, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('sniper:alert');
+    }
+  },
+
+  // Arbitrage API
+  arbitrage: {
+    start: (config) => ipcRenderer.invoke('arb:start', config),
+    stop: () => ipcRenderer.invoke('arb:stop'),
+    getHistory: () => ipcRenderer.invoke('arb:history'),
+    onExecuted: (callback) => {
+      ipcRenderer.on('arb:executed', (_, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('arb:executed');
+    }
+  },
+
+  // Listing detector API
+  listing: {
+    start: (config) => ipcRenderer.invoke('listing:start', config),
+    stop: () => ipcRenderer.invoke('listing:stop'),
+    onNewListing: (callback) => {
+      ipcRenderer.on('listing:new', (_, data) => callback(data));
+      return () => ipcRenderer.removeAllListeners('listing:new');
+    }
+  },
+
+  // Risk manager API
+  risk: {
+    getStatus: () => ipcRenderer.invoke('risk:status'),
+    resetCircuitBreaker: () => ipcRenderer.invoke('risk:resetCircuitBreaker'),
+    updateConfig: (config) => ipcRenderer.invoke('risk:updateConfig', config)
   },
 
   // File system operations (for trading logs, configs, etc.)

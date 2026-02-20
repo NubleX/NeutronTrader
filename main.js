@@ -12,7 +12,42 @@ const url = require('url');
 const BinanceAPI = require('./electron/binanceApi');
 const schedule = require('node-schedule');
 const { storageService } = require('./electron/storageService');
+const { keyVault } = require('./electron/security/keyVault');
+const { PriceFeedAggregator } = require('./electron/priceFeedAggregator');
+const { ListingDetector } = require('./electron/listingDetector/index');
+const { riskManager } = require('./electron/riskManager');
+const { OrderManager } = require('./electron/orderManager');
+const { ArbitrageEngine } = require('./electron/strategies/arbitrageEngine');
+const { SniperEngine } = require('./electron/strategies/sniperEngine');
+const { chainManager } = require('./electron/defi/chainManager');
+const { walletManager } = require('./electron/defi/walletManager');
+const { UniswapAdapter } = require('./electron/defi/uniswapAdapter');
+const { PancakeSwapAdapter } = require('./electron/defi/pancakeswapAdapter');
+const { encrypt, decrypt, hashApiKey, validateApiKeyFormat } = require('./electron/security/encryption');
+const { BinanceAdapter } = require('./electron/exchanges/binanceAdapter');
+const { CoinbaseAdapter } = require('./electron/exchanges/coinbaseAdapter');
+const { KrakenAdapter } = require('./electron/exchanges/krakenAdapter');
+const { OKXAdapter } = require('./electron/exchanges/okxAdapter');
+const { BybitAdapter } = require('./electron/exchanges/bybitAdapter');
 const activeBots = new Map();
+
+const ADAPTER_CLASSES = {
+  binance: BinanceAdapter,
+  coinbase: CoinbaseAdapter,
+  kraken: KrakenAdapter,
+  okx: OKXAdapter,
+  bybit: BybitAdapter
+};
+
+// Registry of configured exchange adapters
+const exchangeAdapters = new Map();
+exchangeAdapters.set('binance', new BinanceAdapter({ isTestnet: true }));
+
+function getAdapter(name) {
+  const adapter = exchangeAdapters.get(name);
+  if (!adapter) throw new Error(`Exchange "${name}" not configured`);
+  return adapter;
+}
 let mainWindow
 
 async function createWindow() {
@@ -313,6 +348,324 @@ ipcMain.handle('binance:marketOrder', async (event, apiConfig, symbol, side, qua
   }
 });
 
+// Strategy engine singletons
+let arbitrageEngine = null;
+let sniperEngine = null;
+let listingDetector = null;
+const orderManager = new OrderManager(exchangeAdapters);
+
+// ===== STRATEGY ENGINE IPC HANDLERS =====
+
+ipcMain.handle('arb:start', async (event, config) => {
+  try {
+    if (!priceFeedAggregator) return { success: false, error: 'Price feed not started' };
+    if (arbitrageEngine) arbitrageEngine.stop();
+    arbitrageEngine = new ArbitrageEngine(priceFeedAggregator, riskManager, orderManager, config);
+    arbitrageEngine.on('executed', (record) => {
+      const allWindows = require('electron').BrowserWindow.getAllWindows();
+      allWindows.forEach(w => w.webContents.send('arb:executed', record));
+    });
+    arbitrageEngine.start();
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('arb:stop', async () => {
+  if (arbitrageEngine) { arbitrageEngine.stop(); arbitrageEngine = null; }
+  return { success: true };
+});
+
+ipcMain.handle('arb:history', async () => {
+  return { success: true, data: arbitrageEngine ? arbitrageEngine.getHistory() : [] };
+});
+
+ipcMain.handle('sniper:start', async (event, config) => {
+  try {
+    if (sniperEngine) sniperEngine.stop();
+    sniperEngine = new SniperEngine(null /* listingDetector wired below */, riskManager, orderManager, config);
+    sniperEngine.on('sniped', (record) => {
+      const allWindows = require('electron').BrowserWindow.getAllWindows();
+      allWindows.forEach(w => w.webContents.send('sniper:alert', record));
+    });
+    sniperEngine.start();
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('sniper:stop', async () => {
+  if (sniperEngine) { sniperEngine.stop(); sniperEngine = null; }
+  return { success: true };
+});
+
+ipcMain.handle('sniper:history', async () => {
+  return { success: true, data: sniperEngine ? sniperEngine.getHistory() : [] };
+});
+
+ipcMain.handle('sniper:config', async (event, config) => {
+  if (sniperEngine) sniperEngine.updateConfig(config);
+  return { success: true };
+});
+
+ipcMain.handle('risk:status', async () => {
+  return { success: true, data: riskManager.getStatus() };
+});
+
+ipcMain.handle('risk:resetCircuitBreaker', async () => {
+  riskManager.resetCircuitBreaker();
+  return { success: true };
+});
+
+ipcMain.handle('risk:updateConfig', async (event, config) => {
+  Object.assign(riskManager.config, config);
+  return { success: true };
+});
+
+// ===== LISTING DETECTOR IPC HANDLERS =====
+
+ipcMain.handle('listing:start', async (event, config) => {
+  try {
+    if (listingDetector) listingDetector.stop();
+    listingDetector = new ListingDetector(exchangeAdapters, config);
+    listingDetector.on('new-listing', (listing) => {
+      const allWindows = require('electron').BrowserWindow.getAllWindows();
+      allWindows.forEach(w => w.webContents.send('listing:new', listing));
+      // Forward to sniper if active
+      if (sniperEngine && sniperEngine.isRunning()) {
+        sniperEngine.listingDetector = listingDetector;
+        sniperEngine.emit('new-listing-forward', listing);
+      }
+    });
+    await listingDetector.start();
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('listing:stop', async () => {
+  if (listingDetector) { listingDetector.stop(); listingDetector = null; }
+  return { success: true };
+});
+
+// ===== DEFI IPC HANDLERS =====
+
+// DEX adapters (lazy init)
+const defiAdapters = {
+  ethereum: () => new UniswapAdapter('ethereum', chainManager),
+  arbitrum: () => new UniswapAdapter('arbitrum', chainManager),
+  polygon:  () => new UniswapAdapter('polygon', chainManager),
+  bsc:      () => new PancakeSwapAdapter(chainManager)
+};
+
+ipcMain.handle('wallet:create', async (event, chain) => {
+  try {
+    const result = await walletManager.createWallet(chain);
+    return { success: true, data: { address: result.address } }; // never expose mnemonic to renderer
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('wallet:import', async (event, chain, privateKey) => {
+  try {
+    const result = await walletManager.importWallet(chain, privateKey);
+    return { success: true, data: { address: result.address } };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('wallet:address', async (event, chain) => {
+  try {
+    const wallets = await walletManager.listWallets();
+    const w = wallets.find(x => x.chain === chain);
+    return { success: true, data: w ? w.address : null };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('wallet:balance', async (event, chain, address) => {
+  try {
+    const balance = await walletManager.getBalance(chain, address);
+    return { success: true, data: balance };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('wallet:list', async () => {
+  try {
+    const wallets = await walletManager.listWallets();
+    return { success: true, data: wallets };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('defi:poolPrice', async (event, chain, tokenA, tokenB) => {
+  try {
+    const factory = defiAdapters[chain];
+    if (!factory) throw new Error(`No DEX adapter for chain: ${chain}`);
+    const adapter = factory();
+    const result = await adapter.getPoolPrice(tokenA, tokenB);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// ===== PRICE FEED AGGREGATOR =====
+
+let priceFeedAggregator = null;
+
+ipcMain.handle('pricefeed:start', async (event, symbols, options) => {
+  try {
+    if (priceFeedAggregator) priceFeedAggregator.stop();
+    priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, options);
+    priceFeedAggregator.on('arbitrage-opportunity', (opp) => {
+      const allWindows = require('electron').BrowserWindow.getAllWindows();
+      allWindows.forEach(w => w.webContents.send('arb:opportunity', opp));
+    });
+    priceFeedAggregator.start(symbols);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('pricefeed:stop', async () => {
+  if (priceFeedAggregator) { priceFeedAggregator.stop(); priceFeedAggregator = null; }
+  return { success: true };
+});
+
+ipcMain.handle('pricefeed:snapshot', async () => {
+  if (!priceFeedAggregator) return { success: true, data: {} };
+  return { success: true, data: priceFeedAggregator.getPriceSnapshot() };
+});
+
+ipcMain.handle('pricefeed:symbolPrices', async (event, symbol) => {
+  if (!priceFeedAggregator) return { success: true, data: [] };
+  return { success: true, data: priceFeedAggregator.getPricesForSymbol(symbol) };
+});
+
+// ===== SECURITY IPC HANDLERS =====
+
+ipcMain.handle('security:encrypt', async (event, data, password) => {
+  try {
+    return { success: true, data: encrypt(data, password) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('security:decrypt', async (event, encryptedData, password) => {
+  try {
+    return { success: true, data: decrypt(encryptedData, password) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('security:hashApiKey', async (event, apiKey) => {
+  return { success: true, data: hashApiKey(apiKey) };
+});
+
+ipcMain.handle('security:validateApiKey', async (event, apiKey) => {
+  return { success: true, data: validateApiKeyFormat(apiKey) };
+});
+
+// Store exchange credentials via key vault
+ipcMain.handle('security:storeCredentials', async (event, exchange, apiKey, apiSecret, passphrase) => {
+  try {
+    await keyVault.storeExchangeCredentials(exchange, apiKey, apiSecret, passphrase);
+    // Re-configure the adapter with the new credentials
+    const Cls = ADAPTER_CLASSES[exchange];
+    if (Cls) {
+      const existing = exchangeAdapters.get(exchange);
+      const isTestnet = existing ? existing.isTestnet : true;
+      exchangeAdapters.set(exchange, new Cls({ apiKey, apiSecret, passphrase, isTestnet }));
+    }
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// Load persisted credentials on startup
+ipcMain.handle('security:loadCredentials', async (event, exchange) => {
+  try {
+    const creds = await keyVault.getExchangeCredentials(exchange);
+    if (creds) {
+      const Cls = ADAPTER_CLASSES[exchange];
+      if (Cls) {
+        const existing = exchangeAdapters.get(exchange);
+        const isTestnet = existing ? existing.isTestnet : true;
+        exchangeAdapters.set(exchange, new Cls({ ...creds, isTestnet }));
+      }
+      return { success: true, hasCredentials: true };
+    }
+    return { success: true, hasCredentials: false };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// ===== MULTI-EXCHANGE IPC HANDLERS =====
+
+ipcMain.handle('exchange:configure', async (event, { exchange, config }) => {
+  try {
+    const Cls = ADAPTER_CLASSES[exchange];
+    if (!Cls) throw new Error(`Unknown exchange: ${exchange}`);
+    exchangeAdapters.set(exchange, new Cls(config));
+    await storageService.saveSetting(`exchange_config_${exchange}`, { exchange, isTestnet: config.isTestnet });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:list', async () => {
+  return { success: true, data: Array.from(exchangeAdapters.keys()) };
+});
+
+ipcMain.handle('exchange:ping', async (event, exchange) => {
+  try {
+    const result = await getAdapter(exchange).ping();
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:price', async (event, exchange, symbol) => {
+  try {
+    const result = await getAdapter(exchange).getCurrentPrice(symbol);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:orderbook', async (event, exchange, symbol, limit) => {
+  try {
+    const result = await getAdapter(exchange).getOrderBook(symbol, limit);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:candles', async (event, exchange, symbol, interval, options) => {
+  try {
+    const result = await getAdapter(exchange).getCandlesticks(symbol, interval, options);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:account', async (event, exchange) => {
+  try {
+    const result = await getAdapter(exchange).getAccountInfo();
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:marketOrder', async (event, exchange, symbol, side, quantity) => {
+  try {
+    const result = await getAdapter(exchange).createMarketOrder(symbol, side, quantity);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:limitOrder', async (event, exchange, symbol, side, quantity, price, timeInForce) => {
+  try {
+    const result = await getAdapter(exchange).createLimitOrder(symbol, side, quantity, price, timeInForce);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:cancelOrder', async (event, exchange, symbol, orderId) => {
+  try {
+    const result = await getAdapter(exchange).cancelOrder(symbol, orderId);
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('exchange:symbols', async (event, exchange) => {
+  try {
+    const result = await getAdapter(exchange).getListedSymbols();
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 // ===== TRADING BOT IPC HANDLERS =====
 
 let activeTradingBots = new Map();
@@ -345,7 +698,7 @@ ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
 
   // Test API connection before starting
   try {
-    await BinanceAPI.accountInfo(config.apiConfig);
+    await BinanceAPI.getAccountInfo(config.apiConfig);
     console.log('✓ API connection verified');
   } catch (err) {
     console.error('✗ API connection failed:', err.message);
@@ -619,21 +972,14 @@ async function executeTradeStrategy(config, botState) {
 
   try {
     // Get current price
-    const priceResult = await BinanceAPI.prices(config.symbol);
+    const priceResult = await BinanceAPI.getCurrentPrice(config.symbol);
     const currentPrice = parseFloat(priceResult.price);
 
     // Get historical candles for analysis
-    const candlesResult = await BinanceAPI.candles(config.symbol, config.interval, { limit: 50 });
+    const candlesResult = await BinanceAPI.getCandlesticks(config.symbol, config.interval, { limit: 50 });
 
-    // Format candles data (same as before)
-    const candles = candlesResult.map(candle => ({
-      openTime: candle[0],
-      open: parseFloat(candle[1]),
-      high: parseFloat(candle[2]),
-      low: parseFloat(candle[3]),
-      close: parseFloat(candle[4]),
-      volume: parseFloat(candle[5])
-    }));
+    // candlesResult is already formatted by getCandlesticks
+    const candles = candlesResult;
 
     // Execute strategy
     let signal;
@@ -693,14 +1039,56 @@ function executeSimpleMovingAverage(candles) {
   return { action: 'HOLD', reason: 'No SMA crossover signal' };
 }
 
-function executeRSIStrategy(candles) {
-  // Simplified RSI implementation
-  return { action: 'HOLD', reason: 'RSI strategy placeholder' };
+function executeRSIStrategy(candles, period = 14, overbought = 70, oversold = 30) {
+  const closes = candles.map(c => c.close);
+  if (closes.length < period + 1) {
+    return { action: 'HOLD', reason: 'Insufficient data for RSI calculation' };
+  }
+
+  // Wilder's smoothing RSI
+  const deltas = [];
+  for (let i = 1; i < closes.length; i++) deltas.push(closes[i] - closes[i - 1]);
+
+  const gains = deltas.map(d => d > 0 ? d : 0);
+  const losses = deltas.map(d => d < 0 ? -d : 0);
+
+  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  for (let i = period; i < deltas.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+  }
+
+  const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  const rsi = 100 - (100 / (1 + rs));
+
+  if (rsi < oversold) return { action: 'BUY', reason: `RSI oversold (${rsi.toFixed(1)})` };
+  if (rsi > overbought) return { action: 'SELL', reason: `RSI overbought (${rsi.toFixed(1)})` };
+  return { action: 'HOLD', reason: `RSI neutral (${rsi.toFixed(1)})` };
 }
 
-function executeBollingerBandsStrategy(candles, currentPrice) {
-  // Simplified Bollinger Bands implementation
-  return { action: 'HOLD', reason: 'Bollinger Bands strategy placeholder' };
+function executeBollingerBandsStrategy(candles, currentPrice, period = 20, stdDevMultiplier = 2) {
+  const closes = candles.map(c => c.close);
+  if (closes.length < period) {
+    return { action: 'HOLD', reason: 'Insufficient data for Bollinger Bands' };
+  }
+
+  const slice = closes.slice(-period);
+  const sma = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((sum, p) => sum + Math.pow(p - sma, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+
+  const upperBand = sma + stdDevMultiplier * stdDev;
+  const lowerBand = sma - stdDevMultiplier * stdDev;
+
+  if (currentPrice <= lowerBand) {
+    return { action: 'BUY', reason: `Price at lower Bollinger Band (${lowerBand.toFixed(4)})` };
+  }
+  if (currentPrice >= upperBand) {
+    return { action: 'SELL', reason: `Price at upper Bollinger Band (${upperBand.toFixed(4)})` };
+  }
+  return { action: 'HOLD', reason: `Price within Bollinger Bands (${lowerBand.toFixed(4)} - ${upperBand.toFixed(4)})` };
 }
 
 function calculateSMA(prices, period) {

@@ -337,6 +337,149 @@ async function createMarketOrder(apiConfig, symbol, side, quantity) {
 }
 
 /**
+ * Create a limit order
+ */
+async function createLimitOrder(apiConfig, symbol, side, quantity, price, timeInForce = 'GTC') {
+  try {
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API key and secret are required');
+    }
+
+    const params = {
+      symbol: symbol.toUpperCase(),
+      side: side.toUpperCase(),
+      type: 'LIMIT',
+      timeInForce,
+      quantity: parseFloat(quantity).toString(),
+      price: parseFloat(price).toString()
+    };
+
+    const result = await makeRequest('/order', 'POST', params, apiConfig);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to create limit order: ${error.message}`);
+  }
+}
+
+/**
+ * Create a stop-loss limit order
+ */
+async function createStopLossLimitOrder(apiConfig, symbol, side, quantity, price, stopPrice, timeInForce = 'GTC') {
+  try {
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API key and secret are required');
+    }
+
+    const params = {
+      symbol: symbol.toUpperCase(),
+      side: side.toUpperCase(),
+      type: 'STOP_LOSS_LIMIT',
+      timeInForce,
+      quantity: parseFloat(quantity).toString(),
+      price: parseFloat(price).toString(),
+      stopPrice: parseFloat(stopPrice).toString()
+    };
+
+    const result = await makeRequest('/order', 'POST', params, apiConfig);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to create stop-loss limit order: ${error.message}`);
+  }
+}
+
+/**
+ * Create an OCO (One-Cancels-the-Other) order
+ */
+async function createOCOOrder(apiConfig, symbol, side, quantity, price, stopPrice, stopLimitPrice, timeInForce = 'GTC') {
+  try {
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API key and secret are required');
+    }
+
+    const params = {
+      symbol: symbol.toUpperCase(),
+      side: side.toUpperCase(),
+      quantity: parseFloat(quantity).toString(),
+      price: parseFloat(price).toString(),
+      stopPrice: parseFloat(stopPrice).toString(),
+      stopLimitPrice: parseFloat(stopLimitPrice).toString(),
+      stopLimitTimeInForce: timeInForce
+    };
+
+    const result = await makeRequest('/order/oco', 'POST', params, apiConfig);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to create OCO order: ${error.message}`);
+  }
+}
+
+/**
+ * Cancel an order
+ */
+async function cancelOrder(apiConfig, symbol, orderId) {
+  try {
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API key and secret are required');
+    }
+
+    const params = {
+      symbol: symbol.toUpperCase(),
+      orderId
+    };
+
+    const result = await makeRequest('/order', 'DELETE', params, apiConfig);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to cancel order ${orderId}: ${error.message}`);
+  }
+}
+
+/**
+ * Get the status of an order
+ */
+async function getOrderStatus(apiConfig, symbol, orderId) {
+  try {
+    if (!apiConfig || !apiConfig.apiKey || !apiConfig.apiSecret) {
+      throw new Error('API key and secret are required');
+    }
+
+    const params = {
+      symbol: symbol.toUpperCase(),
+      orderId
+    };
+
+    const result = await makeRequest('/order', 'GET', params, apiConfig);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to get order status for ${orderId}: ${error.message}`);
+  }
+}
+
+/**
+ * Get order book (depth) for a symbol
+ */
+async function getOrderBook(symbol, limit = 20) {
+  try {
+    const result = await makeRequest('/depth', 'GET', { symbol: symbol.toUpperCase(), limit });
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to get order book for ${symbol}: ${error.message}`);
+  }
+}
+
+/**
+ * Get all listed symbols (exchange info)
+ */
+async function getListedSymbols() {
+  try {
+    const result = await makeRequest('/exchangeInfo', 'GET');
+    return result.symbols.map(s => s.symbol);
+  } catch (error) {
+    throw new Error(`Failed to get listed symbols: ${error.message}`);
+  }
+}
+
+/**
  * Get open orders for a symbol
  */
 async function getOpenOrders(apiConfig, symbol = null) {
@@ -383,11 +526,18 @@ module.exports = {
   getCurrentPrice,
   get24hrTicker,
   getCandlesticks,
+  getOrderBook,
+  getListedSymbols,
 
   // Private endpoints
   getAccountInfo,
   getMyTrades,
   createMarketOrder,
+  createLimitOrder,
+  createStopLossLimitOrder,
+  createOCOOrder,
+  cancelOrder,
+  getOrderStatus,
   getOpenOrders,
 
   // Utility
