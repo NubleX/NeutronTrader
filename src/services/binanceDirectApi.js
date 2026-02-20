@@ -1,4 +1,5 @@
-// src/services/binanceDirectApi.js
+// NeutronTrader - a simple, user-friendly Binance trading bot.
+// Copyright (C) 2025  Igor Dunaev (NubleX)
 import axios from 'axios';
 
 // Base URL for Binance Testnet
@@ -15,22 +16,22 @@ async function createSignature(queryString, apiSecret) {
   const encoder = new TextEncoder();
   const key = encoder.encode(apiSecret);
   const data = encoder.encode(queryString);
-  
+
   // Create the signature using HMAC-SHA256
   const cryptoKey = await window.crypto.subtle.importKey(
-    'raw', 
+    'raw',
     key,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
   );
-  
+
   const signature = await window.crypto.subtle.sign(
     'HMAC',
     cryptoKey,
     data
   );
-  
+
   // Convert to hex string
   return Array.from(new Uint8Array(signature))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -47,15 +48,15 @@ async function createSignature(queryString, apiSecret) {
 async function signedGetRequest(endpoint, params = {}, apiConfig) {
   // Add timestamp to params
   params.timestamp = Date.now();
-  
+
   // Convert params to query string
   const queryString = Object.keys(params)
     .map(key => `${key}=${encodeURIComponent(params[key])}`)
     .join('&');
-  
+
   // Create signature (now asynchronous)
   const signature = await createSignature(queryString, apiConfig.apiSecret);
-  
+
   try {
     // Make the request
     const response = await axios.get(
@@ -66,7 +67,7 @@ async function signedGetRequest(endpoint, params = {}, apiConfig) {
         }
       }
     );
-    
+
     return response.data;
   } catch (error) {
     handleApiError(error);
@@ -84,15 +85,15 @@ async function signedGetRequest(endpoint, params = {}, apiConfig) {
 async function signedPostRequest(endpoint, params = {}, apiConfig) {
   // Add timestamp to params
   params.timestamp = Date.now();
-  
+
   // Convert params to query string
   const queryString = Object.keys(params)
     .map(key => `${key}=${encodeURIComponent(params[key])}`)
     .join('&');
-  
+
   // Create signature (now asynchronous)
   const signature = await createSignature(queryString, apiConfig.apiSecret);
-  
+
   try {
     // Make the request
     const response = await axios.post(
@@ -105,7 +106,7 @@ async function signedPostRequest(endpoint, params = {}, apiConfig) {
         }
       }
     );
-    
+
     return response.data;
   } catch (error) {
     handleApiError(error);
@@ -119,21 +120,21 @@ async function signedPostRequest(endpoint, params = {}, apiConfig) {
  */
 function handleApiError(error) {
   console.error('API request failed:');
-  
+
   if (error.response) {
     // The request was made and the server responded with an error
     console.error('Status:', error.response.status);
     console.error('Data:', error.response.data);
-    
+
     // Specific Binance error handling
     if (error.response.data && error.response.data.code) {
       const errorCode = error.response.data.code;
       const errorMsg = error.response.data.msg;
-      
+
       console.error(`Binance Error ${errorCode}: ${errorMsg}`);
-      
+
       // Common Binance error codes
-      switch(errorCode) {
+      switch (errorCode) {
         case -1022:
           console.error('Signature validation failed. Check your API secret or system time.');
           break;
@@ -159,25 +160,25 @@ function handleApiError(error) {
  */
 const BinanceApi = {
   // Public endpoints
-  
+
   /**
    * Test connectivity to the API
    * @returns {Promise<{}>} - Empty object on success
    */
   ping: () => publicRequest('/api/v3/ping'),
-  
+
   /**
    * Get server time
    * @returns {Promise<{serverTime: number}>} - Server time in milliseconds
    */
   time: () => publicRequest('/api/v3/time'),
-  
+
   /**
    * Get exchange information
    * @returns {Promise<Object>} - Exchange information
    */
   exchangeInfo: () => publicRequest('/api/v3/exchangeInfo'),
-  
+
   /**
    * Get order book for a symbol
    * @param {string} symbol - Trading pair symbol
@@ -185,7 +186,7 @@ const BinanceApi = {
    * @returns {Promise<Object>} - Order book
    */
   depth: (symbol, limit = 100) => publicRequest('/api/v3/depth', { symbol, limit }),
-  
+
   /**
    * Get recent trades for a symbol
    * @param {string} symbol - Trading pair symbol
@@ -193,7 +194,7 @@ const BinanceApi = {
    * @returns {Promise<Array>} - Recent trades
    */
   trades: (symbol, limit = 500) => publicRequest('/api/v3/trades', { symbol, limit }),
-  
+
   /**
    * Get klines (candlestick) data
    * @param {string} symbol - Trading pair symbol
@@ -202,8 +203,8 @@ const BinanceApi = {
    * @returns {Promise<Array>} - Kline data
    */
   candles: (symbol, interval, options = {}) => {
-    return publicRequest('/api/v3/klines', { 
-      symbol, 
+    return publicRequest('/api/v3/klines', {
+      symbol,
       interval,
       ...options
     }).then(data => {
@@ -223,7 +224,7 @@ const BinanceApi = {
       }));
     });
   },
-  
+
   /**
    * Get ticker price for one or all symbols
    * @param {string} symbol - Trading pair symbol (optional)
@@ -233,16 +234,16 @@ const BinanceApi = {
     const params = symbol ? { symbol } : {};
     return publicRequest('/api/v3/ticker/price', params);
   },
-  
+
   // Authenticated endpoints
-  
+
   /**
    * Get account information
    * @param {Object} apiConfig - API configuration
    * @returns {Promise<Object>} - Account information
    */
   accountInfo: (apiConfig) => signedGetRequest('/api/v3/account', {}, apiConfig),
-  
+
   /**
    * Get current open orders
    * @param {Object} apiConfig - API configuration
@@ -253,7 +254,7 @@ const BinanceApi = {
     const params = symbol ? { symbol } : {};
     return signedGetRequest('/api/v3/openOrders', params, apiConfig);
   },
-  
+
   /**
    * Get all orders (open, filled, cancelled)
    * @param {Object} apiConfig - API configuration
@@ -264,7 +265,7 @@ const BinanceApi = {
   allOrders: (apiConfig, symbol, options = {}) => {
     return signedGetRequest('/api/v3/allOrders', { symbol, ...options }, apiConfig);
   },
-  
+
   /**
    * Get trade history
    * @param {Object} apiConfig - API configuration
@@ -276,7 +277,7 @@ const BinanceApi = {
     const params = symbol ? { symbol, ...options } : options;
     return signedGetRequest('/api/v3/myTrades', params, apiConfig);
   },
-  
+
   /**
    * Create a new order
    * @param {Object} apiConfig - API configuration
@@ -286,7 +287,7 @@ const BinanceApi = {
   createOrder: (apiConfig, orderParams) => {
     return signedPostRequest('/api/v3/order', orderParams, apiConfig);
   },
-  
+
   /**
    * Cancel an order
    * @param {Object} apiConfig - API configuration
@@ -297,7 +298,7 @@ const BinanceApi = {
   cancelOrder: (apiConfig, symbol, orderId) => {
     return signedPostRequest('/api/v3/order', { symbol, orderId }, apiConfig);
   },
-  
+
   /**
    * Create a market buy order
    * @param {Object} apiConfig - API configuration
@@ -313,7 +314,7 @@ const BinanceApi = {
       quantity
     });
   },
-  
+
   /**
    * Create a market sell order
    * @param {Object} apiConfig - API configuration
@@ -329,7 +330,7 @@ const BinanceApi = {
       quantity
     });
   },
-  
+
   /**
    * Create a limit buy order
    * @param {Object} apiConfig - API configuration
@@ -348,7 +349,7 @@ const BinanceApi = {
       price
     });
   },
-  
+
   /**
    * Create a limit sell order
    * @param {Object} apiConfig - API configuration

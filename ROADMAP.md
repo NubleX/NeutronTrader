@@ -2,20 +2,20 @@
 
 This roadmap outlines the planned features and improvements for NeutronTrader. We welcome contributions in any of these areas!
 
-## v0.2.0 (Next Release)
+## v0.2.0
 
-- [ ] Implement persistent storage for trading history
-- [ ] Add more trading pairs
-- [ ] Improve error handling and user feedback
-- [ ] Add basic notification system for trade events
-- [ ] Create proper installer packages for Windows/Mac/Linux
+- [X] Implement persistent storage for trading history
+- [X] Add more trading pairs
+- [X] Improve error handling and user feedback
+- [X] Add basic notification system for trade events
+- [X] Create proper installer packages for Windows/Mac/Linux
 
-## v0.3.0
+## v0.3.0 (Next release)
 
 - [ ] Implement additional trading strategies:
-  - [ ] MACD (Moving Average Convergence Divergence)
-  - [ ] Fibonacci Retracement
-  - [ ] Custom strategy builder
+- [ ] MACD (Moving Average Convergence Divergence)
+- [ ] Fibonacci Retracement
+- [ ] Custom strategy builder
 - [ ] Add backtesting functionality with historical data
 - [ ] Create a more detailed dashboard with portfolio analysis
 - [ ] Improve visualization of trading signals on charts

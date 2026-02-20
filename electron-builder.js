@@ -1,23 +1,31 @@
 {
-  "appId"; "com.neurontrader.app",
-  "productName"; "NeutronTrader",
-  "directories"; {
-    "output"; "dist",
-    "buildResources"; "public"
+  "appId": "com.neurontrader.app",
+  "directories": {
+    "buildResources": "public",
+    "output": "dist"
+  },
+  "extends": null,
+  "extraResources": {
+    "from": "preload.js",
+    "to": "preload.js"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "preload.js"
+  ],
+  "linux": {
+    "category": "Finance",
+    "target": [
+      "AppImage",
+      "deb"
+    ]
+  },
+  "mac": {
+    "category": "public.app-category.finance"
+  },
+  "productName": "NeutronTrader",
+  "win": {
+    "target": "nsis"
   }
-  "files"; [
-    "build/**/*",
-    "electron/**/*"
-  ]
-  "mac"; {
-    "category"; "public.app-category.finance"
-  }
-  "linux"; {
-    "target"; ["AppImage", "deb"],
-    "category"; "Finance"
-  }
-  "win"; {
-    "target"; "nsis"
-  }
-  "extends"; null
 }

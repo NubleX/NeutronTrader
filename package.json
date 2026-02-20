@@ -1,55 +1,37 @@
 {
-  "name": "NeutronTrader",
-  "version": "1.0.0",
+  "name": "neutron-trader",
+  "version": "2.0.0",
   "description": "A simple trading bot for Binance using Electron and React",
-  "main": "electron/main.js",
+  "main": "./main.js",
   "scripts": {
-    "start": "react-app-rewired start",
-    "react-start": "react-app-rewired start",
-    "electron-start": "wait-on http://localhost:3000 && electron .",
-    "dev": "concurrently \"npm run react-start\" \"npm run electron-start\"",
-    "build": "react-app-rewired build",
-    "electron-build": "electron-builder"
+    "react": "vite",
+    "react-start": "vite",
+    "electron-start": "electron .",
+    "dev": "concurrently \"npm:react\" \"wait-on http://localhost:5173 && npm:electron-start\"",
+    "build": "vite build",
+    "dist": "npm run build && electron-builder",
+    "clean": "rimraf node_modules package-lock.json dist build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "binance-api-node": "^0.11.47",
-    "buffer": "^6.0.3",
-    "electron-is-dev": "^2.0.0",
-    "https-browserify": "^1.0.0",
+    "electron-is-dev": "^3.0.1",
     "node-schedule": "^2.1.1",
-    "path-browserify": "^1.0.1",
-    "process": "^0.11.10",
-    "react": "^17.0.2",
-    "react-app-rewired": "^2.2.1",
-    "react-dom": "^17.0.2",
-    "react-scripts": "5.0.0",
-    "recharts": "^2.1.8",
-    "stream-http": "^3.2.0",
-    "vm-browserify": "^1.1.2"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^3.2.1"
   },
   "devDependencies": {
-    "assert": "^2.1.0",
-    "browserify-zlib": "^0.2.0",
-    "concurrently": "^7.0.0",
-    "crypto-browserify": "^3.12.1",
-    "electron": "^36.2.0",
-    "electron-builder": "^26.0.12",
-    "net": "^1.0.2",
-    "stream-browserify": "^3.0.0",
-    "tls-browserify": "^0.2.2",
-    "url": "^0.11.4",
-    "wait-on": "^8.0.3"
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "@eslint/js": "^9.36.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.7.0",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^16.4.0",
+    "rimraf": "^6.0.1",
+    "vite": "^6.3.5",
+    "wait-on": "^9.0.0"
   }
 }
