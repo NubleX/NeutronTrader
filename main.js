@@ -39,9 +39,18 @@ const ADAPTER_CLASSES = {
   bybit: BybitAdapter
 };
 
-// Registry of configured exchange adapters
-const exchangeAdapters = new Map();
-exchangeAdapters.set('binance', new BinanceAdapter({ isTestnet: true }));
+// Registry of configured exchange adapters.
+// All five are pre-instantiated with empty configs so public market data
+// (prices, order books, listing detection) works out of the box without
+// any user-provided API keys. Trading operations will fail until the user
+// adds their keys via the Exchanges tab.
+const exchangeAdapters = new Map([
+  ['binance',  new BinanceAdapter({ isTestnet: false })],
+  ['coinbase', new CoinbaseAdapter({})],
+  ['kraken',   new KrakenAdapter({})],
+  ['okx',      new OKXAdapter({})],
+  ['bybit',    new BybitAdapter({})],
+]);
 
 function getAdapter(name) {
   const adapter = exchangeAdapters.get(name);
@@ -57,8 +66,6 @@ async function createWindow() {
       height: 900,
       minWidth: 1200,
       minHeight: 800,
-      // icon must point to an icon file, not preload.js
-      icon: path.join(__dirname, "electron", "icon.ico"),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -78,17 +85,16 @@ async function createWindow() {
         slashes: true
       });
 
-    console.log('Launching Electron (isDev=%s) loading URL: %s', isDev, startUrl);
-    await mainWindow.loadURL(startUrl);
-    // Show window when ready to prevent visual flash
+    // Register before loadURL — event can fire before await returns
     mainWindow.once('ready-to-show', () => {
       mainWindow.show();
-
-      // Focus window on creation
       if (isDev) {
         mainWindow.webContents.openDevTools();
       }
     });
+
+    console.log('Launching Electron (isDev=%s) loading URL: %s', isDev, startUrl);
+    await mainWindow.loadURL(startUrl);
 
     // Handle window closed
     mainWindow.on('closed', () => {
@@ -160,6 +166,31 @@ app.whenReady().then(async () => {
 
     // Set up application menu
     setupApplicationMenu();
+
+    // Auto-start public market data — no API keys needed
+    const DEFAULT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT'];
+    try {
+      priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, { pollIntervalMs: 8000, minProfitPct: 0.3 });
+      priceFeedAggregator.on('arbitrage-opportunity', opp => {
+        if (mainWindow) mainWindow.webContents.send('arb:opportunity', opp);
+      });
+      priceFeedAggregator.start(DEFAULT_SYMBOLS);
+      console.log('[App] Price feed started for', DEFAULT_SYMBOLS.join(', '));
+    } catch (e) {
+      console.warn('[App] Price feed failed to start:', e.message);
+    }
+
+    try {
+      listingDetector = new ListingDetector(exchangeAdapters, { dedupWindowMs: 60000 });
+      listingDetector.on('new-listing', listing => {
+        if (mainWindow) mainWindow.webContents.send('listing:new', listing);
+        if (sniperEngine && sniperEngine.isRunning()) sniperEngine.handleListing(listing);
+      });
+      await listingDetector.start();
+      console.log('[App] Listing detector started');
+    } catch (e) {
+      console.warn('[App] Listing detector failed to start:', e.message);
+    }
 
     // Handle app activation (macOS)
     app.on('activate', () => {

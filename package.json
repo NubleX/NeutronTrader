@@ -7,8 +7,8 @@
   "scripts": {
     "react": "vite",
     "react-start": "vite",
-    "electron-start": "electron .",
-    "dev": "concurrently \"npm:react\" \"wait-on http://localhost:5173 && npm:electron-start\"",
+    "electron-start": "electron --no-sandbox .",
+    "dev": "concurrently \"npm run react\" \"wait-on http://localhost:5173 && npm run electron-start\"",
     "build": "vite build",
     "dist": "npm run build && electron-builder",
     "clean": "rimraf node_modules package-lock.json dist build",
