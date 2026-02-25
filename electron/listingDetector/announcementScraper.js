@@ -38,6 +38,10 @@ class AnnouncementScraper extends EventEmitter {
         const id = String(article.id);
         if (this._seen.has(id)) continue;
         this._seen.add(id);
+        // Prevent unbounded growth — keep at most 500 seen IDs
+        if (this._seen.size > 500) {
+          this._seen.delete(this._seen.values().next().value);
+        }
 
         const title = article.title || '';
         if (this._isListingAnnouncement(title)) {

@@ -133,19 +133,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('professional:dataQuality'),
 
     // Event listeners for professional data
+    // The handler reference must be stored so removeListener can find the exact
+    // function that was registered — passing `callback` directly would not match
+    // the anonymous wrapper and the listener would leak on every component mount.
     onMarketData: (callback) => {
-      ipcRenderer.on('professional:marketData', (event, data) => callback(data));
-      return () => ipcRenderer.removeListener('professional:marketData', callback);
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('professional:marketData', handler);
+      return () => ipcRenderer.removeListener('professional:marketData', handler);
     },
 
     onLatencyUpdate: (callback) => {
-      ipcRenderer.on('professional:latencyUpdate', (event, data) => callback(data));
-      return () => ipcRenderer.removeListener('professional:latencyUpdate', callback);
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('professional:latencyUpdate', handler);
+      return () => ipcRenderer.removeListener('professional:latencyUpdate', handler);
     },
 
     onQualityAlert: (callback) => {
-      ipcRenderer.on('professional:qualityAlert', (event, data) => callback(data));
-      return () => ipcRenderer.removeListener('professional:qualityAlert', callback);
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('professional:qualityAlert', handler);
+      return () => ipcRenderer.removeListener('professional:qualityAlert', handler);
     }
   },
 

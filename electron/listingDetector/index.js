@@ -45,6 +45,11 @@ class ListingDetector extends EventEmitter {
     if (lastSeen && now - lastSeen < this._dedupWindowMs) return;
     this._seen.set(key, now);
 
+    // Prune stale entries so the Map doesn't grow unbounded over time
+    for (const [k, ts] of this._seen) {
+      if (now - ts > this._dedupWindowMs * 10) this._seen.delete(k);
+    }
+
     console.log(`[ListingDetector] *** NEW LISTING *** ${listing.symbol} on ${listing.exchange} (source: ${listing.source})`);
     this.emit('new-listing', listing);
   }

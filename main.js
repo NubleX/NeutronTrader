@@ -13,17 +13,16 @@ const BinanceAPI = require('./electron/binanceApi');
 const schedule = require('node-schedule');
 const { storageService } = require('./electron/storageService');
 const { keyVault } = require('./electron/security/keyVault');
-const { PriceFeedAggregator } = require('./electron/priceFeedAggregator');
+const { PriceFeedAggregator, DEFAULT_SYMBOLS } = require('./electron/priceFeedAggregator');
 const { ListingDetector } = require('./electron/listingDetector/index');
 const { riskManager } = require('./electron/riskManager');
 const { OrderManager } = require('./electron/orderManager');
 const { ArbitrageEngine } = require('./electron/strategies/arbitrageEngine');
 const { SniperEngine } = require('./electron/strategies/sniperEngine');
-const { chainManager } = require('./electron/defi/chainManager');
-const { walletManager } = require('./electron/defi/walletManager');
-const { UniswapAdapter } = require('./electron/defi/uniswapAdapter');
-const { PancakeSwapAdapter } = require('./electron/defi/pancakeswapAdapter');
 const { encrypt, decrypt, hashApiKey, validateApiKeyFormat } = require('./electron/security/encryption');
+// NOTE: DeFi modules (ethers.js) are NOT imported here — they are lazy-loaded
+// on first use to avoid persistent JsonRpcProvider connections (~200-500 MB each)
+// consuming gigabytes of RAM at startup even when the DeFi tab is never opened.
 const { BinanceAdapter } = require('./electron/exchanges/binanceAdapter');
 const { CoinbaseAdapter } = require('./electron/exchanges/coinbaseAdapter');
 const { KrakenAdapter } = require('./electron/exchanges/krakenAdapter');
@@ -167,10 +166,11 @@ app.whenReady().then(async () => {
     // Set up application menu
     setupApplicationMenu();
 
-    // Auto-start public market data — no API keys needed
-    const DEFAULT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT'];
+    // Auto-start price feed. Exchanges are staggered 10s apart so only one
+    // exchange is ever being polled at a time. Each exchange cycles every 60s.
+    // Listing detector is NOT auto-started; user enables it from the Sniper tab.
     try {
-      priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, { pollIntervalMs: 8000, minProfitPct: 0.3 });
+      priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, { minProfitPct: 0.3 });
       priceFeedAggregator.on('arbitrage-opportunity', opp => {
         if (mainWindow) mainWindow.webContents.send('arb:opportunity', opp);
       });
@@ -178,18 +178,6 @@ app.whenReady().then(async () => {
       console.log('[App] Price feed started for', DEFAULT_SYMBOLS.join(', '));
     } catch (e) {
       console.warn('[App] Price feed failed to start:', e.message);
-    }
-
-    try {
-      listingDetector = new ListingDetector(exchangeAdapters, { dedupWindowMs: 60000 });
-      listingDetector.on('new-listing', listing => {
-        if (mainWindow) mainWindow.webContents.send('listing:new', listing);
-        if (sniperEngine && sniperEngine.isRunning()) sniperEngine.handleListing(listing);
-      });
-      await listingDetector.start();
-      console.log('[App] Listing detector started');
-    } catch (e) {
-      console.warn('[App] Listing detector failed to start:', e.message);
     }
 
     // Handle app activation (macOS)
@@ -379,6 +367,42 @@ ipcMain.handle('binance:marketOrder', async (event, apiConfig, symbol, side, qua
   }
 });
 
+// ===== LAZY DEFI MODULE LOADING =====
+// ethers.js JsonRpcProvider creates persistent polling connections and holds
+// 200-500 MB of V8 heap per chain. With 4 chains that's ~2 GB before any
+// trading activity. Only require() DeFi modules when the user actually uses them.
+
+let _defiLoaded = false;
+let _chainManager = null;
+let _walletManager = null;
+const _defiAdapterCache = {};
+
+function _loadDefi() {
+  if (_defiLoaded) return;
+  _defiLoaded = true;
+  _chainManager = require('./electron/defi/chainManager').chainManager;
+  _walletManager = require('./electron/defi/walletManager').walletManager;
+}
+
+function getWalletManager() {
+  _loadDefi();
+  return _walletManager;
+}
+
+function getDefiAdapter(chain) {
+  if (!_defiAdapterCache[chain]) {
+    _loadDefi();
+    if (chain === 'bsc') {
+      const { PancakeSwapAdapter } = require('./electron/defi/pancakeswapAdapter');
+      _defiAdapterCache[chain] = new PancakeSwapAdapter(_chainManager);
+    } else {
+      const { UniswapAdapter } = require('./electron/defi/uniswapAdapter');
+      _defiAdapterCache[chain] = new UniswapAdapter(chain, _chainManager);
+    }
+  }
+  return _defiAdapterCache[chain];
+}
+
 // Strategy engine singletons
 let arbitrageEngine = null;
 let sniperEngine = null;
@@ -478,31 +502,23 @@ ipcMain.handle('listing:stop', async () => {
 
 // ===== DEFI IPC HANDLERS =====
 
-// DEX adapters (lazy init)
-const defiAdapters = {
-  ethereum: () => new UniswapAdapter('ethereum', chainManager),
-  arbitrum: () => new UniswapAdapter('arbitrum', chainManager),
-  polygon:  () => new UniswapAdapter('polygon', chainManager),
-  bsc:      () => new PancakeSwapAdapter(chainManager)
-};
-
 ipcMain.handle('wallet:create', async (event, chain) => {
   try {
-    const result = await walletManager.createWallet(chain);
+    const result = await getWalletManager().createWallet(chain);
     return { success: true, data: { address: result.address } }; // never expose mnemonic to renderer
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('wallet:import', async (event, chain, privateKey) => {
   try {
-    const result = await walletManager.importWallet(chain, privateKey);
+    const result = await getWalletManager().importWallet(chain, privateKey);
     return { success: true, data: { address: result.address } };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('wallet:address', async (event, chain) => {
   try {
-    const wallets = await walletManager.listWallets();
+    const wallets = await getWalletManager().listWallets();
     const w = wallets.find(x => x.chain === chain);
     return { success: true, data: w ? w.address : null };
   } catch (e) { return { success: false, error: e.message }; }
@@ -510,23 +526,21 @@ ipcMain.handle('wallet:address', async (event, chain) => {
 
 ipcMain.handle('wallet:balance', async (event, chain, address) => {
   try {
-    const balance = await walletManager.getBalance(chain, address);
+    const balance = await getWalletManager().getBalance(chain, address);
     return { success: true, data: balance };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('wallet:list', async () => {
   try {
-    const wallets = await walletManager.listWallets();
+    const wallets = await getWalletManager().listWallets();
     return { success: true, data: wallets };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('defi:poolPrice', async (event, chain, tokenA, tokenB) => {
   try {
-    const factory = defiAdapters[chain];
-    if (!factory) throw new Error(`No DEX adapter for chain: ${chain}`);
-    const adapter = factory();
+    const adapter = getDefiAdapter(chain);
     const result = await adapter.getPoolPrice(tokenA, tokenB);
     return { success: true, data: result };
   } catch (e) { return { success: false, error: e.message }; }
@@ -818,8 +832,8 @@ ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
     } catch (err) {
       console.error(`[${botId}] Error executing trade strategy:`, err.message);
 
-      // Save error to storage
-      await storageService.saveSetting(`bot_error_${botId}_${Date.now()}`, {
+      // Save error to storage (single key per bot — no unbounded key accumulation)
+      await storageService.saveSetting(`bot_error_${botId}`, {
         botId,
         error: err.message,
         timestamp: Date.now(),

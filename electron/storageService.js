@@ -18,6 +18,8 @@ class StorageService {
             strategies: new Map(),
             settings: new Map()
         };
+        this._lastBackupTime = 0; // throttle: max one backup per 10 minutes
+        this.MAX_TRADES = 5000;   // cap in-memory trade history
     }
 
     async initialize() {
@@ -80,6 +82,13 @@ class StorageService {
     }
 
     async createBackup() {
+        // Throttle: at most one backup every 10 minutes.
+        // Previously a backup was created on every saveSetting/saveTrade call,
+        // causing constant full-DB serialisation + file copy storms.
+        const now = Date.now();
+        if (now - this._lastBackupTime < 600000) return;
+        this._lastBackupTime = now;
+
         try {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const backupFile = path.join(this.backupPath, `backup-${timestamp}.json`);
@@ -138,6 +147,15 @@ class StorageService {
         };
 
         this.cache.trades.set(tradeWithId.id, tradeWithId);
+
+        // Evict oldest trades when over cap to prevent unbounded memory growth
+        if (this.cache.trades.size > this.MAX_TRADES) {
+            const oldest = Array.from(this.cache.trades.entries())
+                .sort((a, b) => a[1].timestamp - b[1].timestamp)
+                .slice(0, this.cache.trades.size - this.MAX_TRADES);
+            for (const [id] of oldest) this.cache.trades.delete(id);
+        }
+
         await this.saveData();
         return tradeWithId;
     }
