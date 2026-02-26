@@ -3,8 +3,8 @@
   <h1>NeutronTrader</h1>
   <p>Multi-exchange algorithmic trading platform with arbitrage detection, listing sniper, and DeFi integration</p>
 
-  [![GitHub release](https://img.shields.io/github/v/release/nublex/NeutronTrader?include_prereleases)](https://github.com/NubleX/NeutronTrader/releases)
-  [![License](https://img.shields.io/github/license/nublex/NeutronTrader)](LICENSE)
+  [![GitHub release](https://img.shields.io/github/v/release/NubleX/NeutronTrader?include_prereleases&label=release)](https://github.com/NubleX/NeutronTrader/releases)
+  [![License](https://img.shields.io/github/license/NubleX/NeutronTrader)](LICENSE)
   [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 </div>
 
