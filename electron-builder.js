@@ -1,31 +1,32 @@
-{
-  "appId": "com.neurontrader.app",
-  "directories": {
-    "buildResources": "public",
-    "output": "dist"
+module.exports = {
+  appId: 'com.nublex.neutrontrader',
+  productName: 'NeutronTrader',
+
+  // Output to release/ so it never collides with Vite's dist/ folder
+  directories: {
+    buildResources: 'public',
+    output: 'release'
   },
-  "extends": null,
-  "extraResources": {
-    "from": "preload.js",
-    "to": "preload.js"
-  },
-  "files": [
-    "dist/**/*",
-    "electron/**/*",
-    "preload.js"
+
+  // Files packaged into the Electron app bundle
+  files: [
+    'dist/**/*',       // Vite-built React renderer
+    'electron/**/*',   // Main-process modules (adapters, services, etc.)
+    'main.js',         // Electron entry point
+    'package.json'
   ],
-  "linux": {
-    "category": "Finance",
-    "target": [
-      "AppImage",
-      "deb"
-    ]
+
+  linux: {
+    category: 'Finance',
+    target: ['AppImage', 'deb']
   },
-  "mac": {
-    "category": "public.app-category.finance"
+
+  win: {
+    target: 'nsis'
   },
-  "productName": "NeutronTrader",
-  "win": {
-    "target": "nsis"
+
+  mac: {
+    category: 'public.app-category.finance',
+    target: 'dmg'
   }
-}
+};

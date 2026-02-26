@@ -1,8 +1,12 @@
 
 {
   "name": "neutron-trader",
-  "version": "2.0.0",
-  "description": "A simple trading bot for Binance using Electron and React",
+  "version": "0.3.0-alpha",
+  "description": "Multi-exchange algorithmic trading platform with arbitrage detection, listing sniper, and DeFi integration",
+  "author": {
+    "name": "Igor Dunaev (NubleX)",
+    "email": "id@idarti.com"
+  },
   "main": "./main.js",
   "scripts": {
     "react": "vite",
@@ -10,7 +14,7 @@
     "electron-start": "electron --no-sandbox .",
     "dev": "concurrently \"npm run react\" \"wait-on http://localhost:5173 && npm run electron-start\"",
     "build": "vite build",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --config electron-builder.js",
     "clean": "rimraf node_modules package-lock.json dist build",
     "preview": "vite preview"
   },

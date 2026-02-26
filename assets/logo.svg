@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 164" width="520" height="164">
+  <defs>
+
+    <!-- Nucleus: cyan core fading to indigo -->
+    <radialGradient id="nucleusGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="35%"  stop-color="#00d4ff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.85"/>
+    </radialGradient>
+
+    <!-- Electron dot: white center → cyan -->
+    <radialGradient id="eDot" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#00b4d8"/>
+    </radialGradient>
+
+    <!-- Soft glow for nucleus -->
+    <filter id="nucGlow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Tight glow for electrons + sparkline -->
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Orbit fade: dimmer on far edge, brighter on near edge -->
+    <filter id="orbitGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+  </defs>
+
+  <!-- ── Background ── -->
+  <rect width="520" height="164" fill="#0d1117"/>
+
+  <!-- ── Atom symbol — center (82, 82), rx=58, ry=18 ── -->
+
+  <!-- Orbit 1: horizontal (0°) -->
+  <ellipse cx="82" cy="82" rx="58" ry="18"
+           fill="none" stroke="#00b4d8" stroke-width="1.4" opacity="0.55"
+           filter="url(#orbitGlow)"/>
+
+  <!-- Orbit 2: 60° -->
+  <ellipse cx="82" cy="82" rx="58" ry="18"
+           fill="none" stroke="#00b4d8" stroke-width="1.4" opacity="0.55"
+           transform="rotate(60 82 82)" filter="url(#orbitGlow)"/>
+
+  <!-- Orbit 3: 120° -->
+  <ellipse cx="82" cy="82" rx="58" ry="18"
+           fill="none" stroke="#00b4d8" stroke-width="1.4" opacity="0.55"
+           transform="rotate(120 82 82)" filter="url(#orbitGlow)"/>
+
+  <!-- ── Price sparkline (green, rising, cuts through nucleus) ── -->
+  <polyline
+    points="34,98 44,93 55,89 65,91 74,80 82,74 92,70 102,72 112,63 122,57"
+    fill="none" stroke="#10b981" stroke-width="2.2"
+    stroke-linecap="round" stroke-linejoin="round"
+    opacity="0.9" filter="url(#glow)"/>
+
+  <!-- ── Electrons ──
+       E1: rightmost of orbit 1  → (140, 82)
+       E2: upper-left  (orbit 2) → (54, 65)
+       E3: upper-right (orbit 3) → (110, 65)
+  ── -->
+  <circle cx="140" cy="82"  r="4.2" fill="url(#eDot)" filter="url(#glow)"/>
+  <circle cx="54"  cy="65"  r="4.2" fill="url(#eDot)" filter="url(#glow)"/>
+  <circle cx="110" cy="65"  r="4.2" fill="url(#eDot)" filter="url(#glow)"/>
+
+  <!-- ── Nucleus ── -->
+  <!-- Outer glow ring -->
+  <circle cx="82" cy="82" r="18" fill="#00b4d8" opacity="0.08" filter="url(#nucGlow)"/>
+  <!-- Main nucleus -->
+  <circle cx="82" cy="82" r="11" fill="url(#nucleusGrad)" filter="url(#nucGlow)"/>
+  <!-- Bright core -->
+  <circle cx="82" cy="82" r="4.5" fill="#ffffff" opacity="0.55"/>
+
+  <!-- ── Wordmark ── -->
+  <!-- "NEUTRON" — bold white, tight tracking -->
+  <text
+    x="178" y="80"
+    font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif"
+    font-size="46" font-weight="900"
+    fill="#ffffff" letter-spacing="-1.5">NEUTRON</text>
+
+  <!-- "TRADER" — light weight, electric cyan, wide tracking -->
+  <text
+    x="183" y="122"
+    font-family="'Arial', 'Helvetica Neue', sans-serif"
+    font-size="24" font-weight="300"
+    fill="#00b4d8" letter-spacing="11">TRADER</text>
+
+  <!-- Thin separator line between the two words -->
+  <line x1="178" y1="90" x2="500" y2="90"
+        stroke="#00b4d8" stroke-width="0.6" opacity="0.25"/>
+
+</svg>

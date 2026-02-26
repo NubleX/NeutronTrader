@@ -1,50 +1,66 @@
 # NeutronTrader Roadmap
 
-This roadmap outlines the planned features and improvements for NeutronTrader. We welcome contributions in any of these areas!
+## v0.3.0-alpha ← current
 
-## v0.2.0
+What shipped in this release:
 
-- [X] Implement persistent storage for trading history
-- [X] Add more trading pairs
-- [X] Improve error handling and user feedback
-- [X] Add basic notification system for trade events
-- [X] Create proper installer packages for Windows/Mac/Linux
+- [x] **Multi-exchange support** — Binance, Coinbase, Kraken, OKX, Bybit via unified adapter interface
+- [x] **Cross-exchange arbitrage engine** — real-time spread detection, net profit calculation after fees, automated execution via OrderManager
+- [x] **Listing sniper** — monitors exchange API symbol lists (30s) and Binance announcements (60s) for new token listings; fires snipe orders on detection
+- [x] **DeFi wallet manager** — create/import wallets for Ethereum, Arbitrum, Polygon, BSC; on-chain balance queries
+- [x] **Uniswap V3 + PancakeSwap integration** — pool price queries and swaps via ethers.js (lazy-loaded to avoid memory overhead)
+- [x] **Encrypted key vault** — AES-256-GCM per-exchange credential storage; keys never leave main process
+- [x] **Risk manager** — circuit breaker (daily drawdown limit), per-trade position sizing, manual reset
+- [x] **RSI and Bollinger Bands strategies** — fully implemented alongside existing SMA
+- [x] **Staggered price feed aggregator** — 5 exchanges, 10s stagger, 60s poll cycle; bounded memory
+- [x] **Production build pipeline** — AppImage + .deb via electron-builder
+- [x] **Memory fixes** — lazy DeFi loading, backup throttle, trades cap, listener leak fixes
 
-## v0.3.0 (Next release)
-
-- [ ] Implement additional trading strategies:
-- [ ] MACD (Moving Average Convergence Divergence)
-- [ ] Fibonacci Retracement
-- [ ] Custom strategy builder
-- [ ] Add backtesting functionality with historical data
-- [ ] Create a more detailed dashboard with portfolio analysis
-- [ ] Improve visualization of trading signals on charts
-- [ ] Support for trading on multiple pairs simultaneously
+---
 
 ## v0.4.0
 
-- [ ] Implement advanced risk management features
-- [ ] Add TradingView integration for advanced charting
-- [ ] Create strategy performance metrics and reporting
-- [ ] Support for trading bots customization via JSON configuration
-- [ ] Add user-configurable alerts and notifications
+- [ ] **Backtesting engine** — run strategies against historical OHLCV data before going live
+- [ ] **MACD strategy** — signal/histogram crossover with configurable fast/slow/signal periods
+- [ ] **Strategy composer UI** — configure and combine strategies without touching code
+- [ ] **Portfolio view** — aggregate balances across all configured exchanges in one panel
+- [ ] **Persistent arbitrage history** — store and replay detected opportunities with P&L attribution
+- [ ] **WebSocket price feed** — replace HTTP polling with WS streams (Binance, Bybit) for lower latency
+- [ ] **Sniper improvements** — configurable exchange filter, per-listing entry limits, dry-run mode
+- [ ] **Notification system** — desktop notifications for arb opportunities, listing alerts, bot signals
+
+---
+
+## v0.5.0
+
+- [ ] **TradingView chart integration** — replace basic charts with full TradingView widget
+- [ ] **Multi-pair bot** — run the scheduled bot on multiple pairs simultaneously with shared risk budget
+- [ ] **DeFi arbitrage** — detect price deltas between CEX spot and DEX pool prices; execute cross-venue
+- [ ] **Custom strategy JSON** — define strategy logic as a JSON rule set, no code changes required
+- [ ] **Performance reporting** — per-strategy win rate, Sharpe ratio, max drawdown, daily P&L charts
+
+---
 
 ## v1.0.0
 
-- [ ] Full Binance API support (main network, with extensive safety measures)
-- [ ] Advanced portfolio management
-- [ ] Performance optimization for long-running sessions
-- [ ] Strategy marketplace or sharing mechanism
-- [ ] Complete documentation and tutorials
+- [ ] **Mainnet trading with safety rails** — graduated unlock requiring confirmed testnet history
+- [ ] **Full audit of key vault and encryption layer** before mainnet release
+- [ ] **Strategy marketplace / import** — share and import community strategy configs
+- [ ] **Complete documentation and user guide**
+- [ ] **Automated test suite** — unit tests for strategy logic, integration tests for exchange adapters
+
+---
 
 ## Beyond v1.0
 
-- [ ] Support for additional exchanges
-- [ ] Mobile companion app
-- [ ] Machine learning strategy optimization
-- [ ] Social trading features
-- [ ] Advanced market analytics
+- [ ] Additional exchange adapters (Bitfinex, HTX, Gate.io, dYdX)
+- [ ] On-chain analytics dashboard (gas tracker, MEV monitoring)
+- [ ] Machine learning signal layer — LSTM price prediction as an optional strategy overlay
+- [ ] Mobile companion app for monitoring and alerts
+- [ ] Social / copy trading — share bot configs and track community performance
+
+---
 
 ## Contributing
 
-We welcome contributions at any stage of the roadmap. Please check our [open issues](https://github.com/yourusername/NeutronTrader/issues) to find ways to contribute, or feel free to suggest new features or improvements.
+Check [open issues](https://github.com/NubleX/NeutronTrader/issues) or pick anything from the roadmap above. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
