@@ -28,6 +28,7 @@ const { CoinbaseAdapter } = require('./electron/exchanges/coinbaseAdapter');
 const { KrakenAdapter } = require('./electron/exchanges/krakenAdapter');
 const { OKXAdapter } = require('./electron/exchanges/okxAdapter');
 const { BybitAdapter } = require('./electron/exchanges/bybitAdapter');
+const TradingBotValidator = require('./electron/validators/tradingBotValidator');
 const activeBots = new Map();
 
 const ADAPTER_CLASSES = {
@@ -715,11 +716,17 @@ ipcMain.handle('exchange:symbols', async (event, exchange) => {
 
 let activeTradingBots = new Map();
 
+// Create validator instance with risk manager config
+const tradingBotValidator = new TradingBotValidator(riskManager.config);
+
 // Start trading bot with full configuration persistence
 ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
-  // Validate configuration
-  if (!config || !config.apiConfig || !config.symbol || !config.strategy) {
-    event.reply('trading-error', 'Invalid configuration provided');
+  // Validate configuration using TradingBotValidator
+  try {
+    tradingBotValidator.validateConfig(config);
+  } catch (validationError) {
+    event.reply('trading-error', `Invalid configuration: ${validationError.message}`);
+    console.error('Config validation failed:', validationError.message);
     return;
   }
 
