@@ -30,7 +30,7 @@
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "cross-env": "^10.0.0",
     "electron": "^38.1.2",
     "electron-builder": "^26.7.0",
