@@ -20,11 +20,11 @@
   },
   "dependencies": {
     "electron-is-dev": "^3.0.1",
-    "ethers": "^6.13.4",
+    "ethers": "^6.17.0",
     "node-schedule": "^2.1.1",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "recharts": "^3.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "recharts": "^3.8.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
