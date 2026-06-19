@@ -1,6 +1,7 @@
 // NeutronTrader - CEX-CEX and DEX-CEX arbitrage engine
 
 const { BaseStrategy } = require('./baseStrategy');
+const { storageService } = require('../storageService');
 
 class ArbitrageEngine extends BaseStrategy {
   constructor(priceFeedAggregator, riskManager, orderManager, config = {}) {
@@ -12,24 +13,37 @@ class ArbitrageEngine extends BaseStrategy {
       ...config
     };
     this._opportunities = [];
+    this._oppHandler = opp => this._onOpportunity(opp);
   }
 
   start() {
     super.start();
-    this.priceFeed.on('arbitrage-opportunity', opp => this._onOpportunity(opp));
+    this.priceFeed.on('arbitrage-opportunity', this._oppHandler);
     console.log('[ArbitrageEngine] Started');
   }
 
   stop() {
     super.stop();
-    this.priceFeed.removeAllListeners('arbitrage-opportunity');
+    this.priceFeed.removeListener('arbitrage-opportunity', this._oppHandler);
     console.log('[ArbitrageEngine] Stopped');
+  }
+
+  async _persistRecord(record, type) {
+    const trade = {
+      ...record,
+      source: 'arbitrage',
+      arbType: type,
+      strategy: 'arbitrage',
+      timestamp: record.timestamp || record.executedAt || Date.now(),
+    };
+    await storageService.saveTrade(trade);
+    this._opportunities.push(record);
+    if (this._opportunities.length > 100) this._opportunities.shift();
   }
 
   async _onOpportunity(opp) {
     if (!this.isRunning()) return;
 
-    // Risk check
     const riskResult = this.riskManager.validate({
       netProfitPct:    parseFloat(opp.netProfitPct),
       positionSizeUSDT: this.config.positionSizeUSDT,
@@ -41,7 +55,6 @@ class ArbitrageEngine extends BaseStrategy {
       return;
     }
 
-    // Estimate quantity from position size and buy price
     const quantity = (this.config.positionSizeUSDT / opp.buyPrice).toFixed(6);
 
     console.log(`[ArbitrageEngine] Executing arb: ${opp.symbol} buy@${opp.buyExchange} sell@${opp.sellExchange} net=${opp.netProfitPct}%`);
@@ -65,9 +78,8 @@ class ArbitrageEngine extends BaseStrategy {
 
       this.riskManager.recordClose(positionId, pnl);
 
-      const record = { ...opp, quantity, result, pnl, executedAt: Date.now() };
-      this._opportunities.push(record);
-      if (this._opportunities.length > 100) this._opportunities.shift();
+      const record = { ...opp, quantity, result, pnl, executedAt: Date.now(), type: 'executed', success: result.success };
+      await this._persistRecord(record, 'executed');
 
       this.emit('executed', record);
     } catch (err) {
@@ -77,6 +89,10 @@ class ArbitrageEngine extends BaseStrategy {
   }
 
   getHistory() { return [...this._opportunities]; }
+
+  async getPersistedHistory(filters = {}) {
+    return storageService.getArbHistory(filters);
+  }
 }
 
 module.exports = { ArbitrageEngine };

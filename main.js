@@ -25,6 +25,17 @@ const { KrakenAdapter } = require('./electron/exchanges/krakenAdapter');
 const { OKXAdapter } = require('./electron/exchanges/okxAdapter');
 const { BybitAdapter } = require('./electron/exchanges/bybitAdapter');
 const TradingBotValidator = require('./electron/validators/tradingBotValidator');
+const {
+  executeSimpleMovingAverage,
+  executeRSIStrategy,
+  executeBollingerBandsStrategy,
+  executeMACDStrategy,
+  executeComposedStrategy,
+  validateComposedConfig,
+} = require('./electron/strategies/technicalStrategies');
+const { setupWebSocketIPC } = require('./electron/websocketHandlers');
+const { notificationService } = require('./electron/notificationService');
+const { BacktestEngine } = require('./electron/backtestEngine');
 const activeBots = new Map();
 
 const ADAPTER_CLASSES = {
@@ -45,7 +56,7 @@ const exchangeAdapters = new Map([
   ['coinbase', new CoinbaseAdapter({})],
   ['kraken',   new KrakenAdapter({})],
   ['okx',      new OKXAdapter({})],
-  ['bybit',    new BybitAdapter({})],
+  ['bybit',    new BybitAdapter({ isTestnet: false })],
 ]);
 
 function getAdapter(name) {
@@ -157,6 +168,15 @@ app.whenReady().then(async () => {
     await storageService.initialize();
     console.log('Storage service initialized');
 
+    // Restore Binance mainnet/testnet mode
+    const binanceMode = await storageService.getSetting('exchange_mode_binance', 'mainnet');
+    const binanceTestnet = binanceMode === 'testnet';
+    BinanceAPI.setDefaultTestnetMode(binanceTestnet);
+    exchangeAdapters.set('binance', new BinanceAdapter({ isTestnet: binanceTestnet }));
+
+    await notificationService.initialize();
+    setupWebSocketIPC(ipcMain);
+
     // Create main window
     await createWindow();
 
@@ -167,11 +187,7 @@ app.whenReady().then(async () => {
     // exchange is ever being polled at a time. Each exchange cycles every 60s.
     // Listing detector is NOT auto-started; user enables it from the Sniper tab.
     try {
-      priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, { minProfitPct: 0.3 });
-      priceFeedAggregator.on('arbitrage-opportunity', opp => {
-        if (mainWindow) mainWindow.webContents.send('arb:opportunity', opp);
-      });
-      priceFeedAggregator.start(DEFAULT_SYMBOLS);
+      ensurePriceFeedRunning(DEFAULT_SYMBOLS, { minProfitPct: 0.3 });
       console.log('[App] Price feed started for', DEFAULT_SYMBOLS.join(', '));
     } catch (e) {
       console.warn('[App] Price feed failed to start:', e.message);
@@ -410,10 +426,13 @@ const orderManager = new OrderManager(exchangeAdapters);
 
 ipcMain.handle('arb:start', async (event, config) => {
   try {
-    if (!priceFeedAggregator) return { success: false, error: 'Price feed not started' };
+    ensurePriceFeedRunning(config?.symbols || DEFAULT_SYMBOLS, {
+      minProfitPct: config?.minProfitPct ?? 0.3,
+    });
     if (arbitrageEngine) arbitrageEngine.stop();
     arbitrageEngine = new ArbitrageEngine(priceFeedAggregator, riskManager, orderManager, config);
     arbitrageEngine.on('executed', (record) => {
+      notificationService.notifyArbExecuted(record);
       const allWindows = require('electron').BrowserWindow.getAllWindows();
       allWindows.forEach(w => w.webContents.send('arb:executed', record));
     });
@@ -422,19 +441,35 @@ ipcMain.handle('arb:start', async (event, config) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('arb:status', async () => {
+  return {
+    success: true,
+    data: {
+      running: arbitrageEngine?.isRunning() ?? false,
+      priceFeedRunning: priceFeedAggregator?._running ?? false,
+    },
+  };
+});
+
 ipcMain.handle('arb:stop', async () => {
   if (arbitrageEngine) { arbitrageEngine.stop(); arbitrageEngine = null; }
+  if (priceFeedAggregator) priceFeedAggregator.updateConfig({ minProfitPct: 0.3 });
   return { success: true };
 });
 
-ipcMain.handle('arb:history', async () => {
-  return { success: true, data: arbitrageEngine ? arbitrageEngine.getHistory() : [] };
+ipcMain.handle('arb:history', async (event, filters = {}) => {
+  try {
+    const data = await storageService.getArbHistory(filters);
+    return { success: true, data };
+  } catch (e) {
+    return { success: false, error: e.message, data: [] };
+  }
 });
 
 ipcMain.handle('sniper:start', async (event, config) => {
   try {
     if (sniperEngine) sniperEngine.stop();
-    sniperEngine = new SniperEngine(null /* listingDetector wired below */, riskManager, orderManager, config);
+    sniperEngine = new SniperEngine(listingDetector, riskManager, orderManager, config);
     sniperEngine.on('sniped', (record) => {
       const allWindows = require('electron').BrowserWindow.getAllWindows();
       allWindows.forEach(w => w.webContents.send('sniper:alert', record));
@@ -479,14 +514,16 @@ ipcMain.handle('listing:start', async (event, config) => {
     if (listingDetector) listingDetector.stop();
     listingDetector = new ListingDetector(exchangeAdapters, config);
     listingDetector.on('new-listing', (listing) => {
+      notificationService.notifyListing(listing);
       const allWindows = require('electron').BrowserWindow.getAllWindows();
       allWindows.forEach(w => w.webContents.send('listing:new', listing));
-      // Forward to sniper if active
       if (sniperEngine && sniperEngine.isRunning()) {
-        sniperEngine.listingDetector = listingDetector;
-        sniperEngine.emit('new-listing-forward', listing);
+        sniperEngine.setListingDetector(listingDetector);
       }
     });
+    if (sniperEngine && sniperEngine.isRunning()) {
+      sniperEngine.setListingDetector(listingDetector);
+    }
     await listingDetector.start();
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
@@ -547,17 +584,58 @@ ipcMain.handle('defi:poolPrice', async (event, chain, tokenA, tokenB) => {
 
 let priceFeedAggregator = null;
 
+function wirePriceFeedEvents(aggregator) {
+  aggregator.on('arbitrage-opportunity', (opp) => {
+    storageService.saveTrade({
+      ...opp,
+      source: 'arbitrage',
+      arbType: 'opportunity',
+      strategy: 'arbitrage',
+      timestamp: opp.timestamp || Date.now(),
+    }).catch(() => {});
+    notificationService.notifyArbOpportunity(opp);
+    const allWindows = require('electron').BrowserWindow.getAllWindows();
+    allWindows.forEach(w => w.webContents.send('arb:opportunity', opp));
+  });
+
+  aggregator.on('snapshot-update', (snapshot) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('prices:snapshot', snapshot);
+    }
+  });
+}
+
+function ensurePriceFeedRunning(symbols = DEFAULT_SYMBOLS, options = {}) {
+  if (!priceFeedAggregator) {
+    priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, options);
+    wirePriceFeedEvents(priceFeedAggregator);
+    priceFeedAggregator.start(symbols);
+    return priceFeedAggregator;
+  }
+  if (options.minProfitPct != null) priceFeedAggregator.updateConfig(options);
+  if (symbols?.length) priceFeedAggregator.updateSymbols(symbols);
+  if (!priceFeedAggregator._running) priceFeedAggregator.start(priceFeedAggregator._symbols.length ? priceFeedAggregator._symbols : symbols);
+  return priceFeedAggregator;
+}
+
 ipcMain.handle('pricefeed:start', async (event, symbols, options) => {
   try {
-    if (priceFeedAggregator) priceFeedAggregator.stop();
-    priceFeedAggregator = new PriceFeedAggregator(exchangeAdapters, options);
-    priceFeedAggregator.on('arbitrage-opportunity', (opp) => {
-      const allWindows = require('electron').BrowserWindow.getAllWindows();
-      allWindows.forEach(w => w.webContents.send('arb:opportunity', opp));
-    });
-    priceFeedAggregator.start(symbols);
+    ensurePriceFeedRunning(symbols || DEFAULT_SYMBOLS, options);
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('pricefeed:setMode', async (event, mode) => {
+  try {
+    if (!priceFeedAggregator) return { success: false, error: 'Price feed not started' };
+    priceFeedAggregator.setMode(mode);
+    return { success: true, mode };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('pricefeed:latency', async () => {
+  if (!priceFeedAggregator) return { success: true, data: null };
+  return { success: true, data: priceFeedAggregator.getLatencyMs() };
 });
 
 ipcMain.handle('pricefeed:stop', async () => {
@@ -573,6 +651,178 @@ ipcMain.handle('pricefeed:snapshot', async () => {
 ipcMain.handle('pricefeed:symbolPrices', async (event, symbol) => {
   if (!priceFeedAggregator) return { success: true, data: [] };
   return { success: true, data: priceFeedAggregator.getPricesForSymbol(symbol) };
+});
+
+// ===== PORTFOLIO =====
+
+ipcMain.handle('portfolio:snapshot', async () => {
+  try {
+    const exchanges = [];
+    for (const [name, adapter] of exchangeAdapters.entries()) {
+      try {
+        const creds = await keyVault.getExchangeCredentials(name);
+        if (!creds?.apiKey) continue;
+        const Cls = ADAPTER_CLASSES[name];
+        if (Cls) {
+          const isTestnet = adapter.isTestnet ?? false;
+          const configured = new Cls({ ...creds, isTestnet });
+          const info = await configured.getAccountInfo();
+          exchanges.push({ exchange: name, balances: info.balances || info.data?.balances || [] });
+        }
+      } catch {
+        // skip exchanges without credentials or failed fetch
+      }
+    }
+
+    const snapshot = priceFeedAggregator ? priceFeedAggregator.getPriceSnapshot() : {};
+    const priceByAsset = { USDT: 1, USDC: 1, BUSD: 1 };
+    for (const [key, data] of Object.entries(snapshot)) {
+      const symbol = key.split(':')[0];
+      const [base] = symbol.split('/');
+      if (base && data.price) priceByAsset[base] = data.price;
+    }
+
+    const assets = {};
+    let totalUSDT = 0;
+    for (const { exchange, balances } of exchanges) {
+      for (const bal of balances) {
+        const free = parseFloat(bal.free || 0);
+        const locked = parseFloat(bal.locked || 0);
+        const total = free + locked;
+        if (total <= 0) continue;
+        const usdtValue = total * (priceByAsset[bal.asset] || (bal.asset === 'USDT' ? 1 : 0));
+        totalUSDT += usdtValue;
+        if (!assets[bal.asset]) {
+          assets[bal.asset] = { asset: bal.asset, free: 0, locked: 0, usdtValue: 0, exchanges: [] };
+        }
+        assets[bal.asset].free += free;
+        assets[bal.asset].locked += locked;
+        assets[bal.asset].usdtValue += usdtValue;
+        assets[bal.asset].exchanges.push({ exchange, free, locked, usdtValue });
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        totalUSDT,
+        assets: Object.values(assets).sort((a, b) => b.usdtValue - a.usdtValue),
+        exchanges: exchanges.map(e => e.exchange),
+        updatedAt: Date.now(),
+      },
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('portfolio:getBscBalances', async (event, address) => {
+  try {
+    const { getBscBalances } = require('./electron/defi/bscPortfolio');
+    const data = await getBscBalances(address);
+    return { success: true, data };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// ===== BACKTEST =====
+
+const backtestEngine = new BacktestEngine(async (exchange, symbol, interval, options) => {
+  const adapter = getAdapter(exchange);
+  return adapter.getCandlesticks(symbol, interval, options);
+});
+
+ipcMain.handle('backtest:run', async (event, config) => {
+  try {
+    const sendProgress = (progress) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) win.webContents.send('backtest:progress', progress);
+    };
+    const result = await backtestEngine.run(config, sendProgress);
+    return { success: true, data: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// ===== STRATEGY COMPOSER =====
+
+ipcMain.handle('strategy:save', async (event, config) => {
+  try {
+    const configs = await storageService.getSetting('strategy_configs', []);
+    const idx = configs.findIndex(c => c.name === config.name);
+    if (idx >= 0) configs[idx] = config;
+    else configs.push(config);
+    await storageService.saveSetting('strategy_configs', configs);
+    return { success: true, data: configs };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('strategy:list', async () => {
+  try {
+    const configs = await storageService.getSetting('strategy_configs', []);
+    return { success: true, data: configs };
+  } catch (e) { return { success: false, error: e.message, data: [] }; }
+});
+
+ipcMain.handle('strategy:delete', async (event, name) => {
+  try {
+    const configs = await storageService.getSetting('strategy_configs', []);
+    const filtered = configs.filter(c => c.name !== name);
+    await storageService.saveSetting('strategy_configs', filtered);
+    return { success: true, data: filtered };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('strategy:validate', async (event, config, options = {}) => {
+  try {
+    const result = validateComposedConfig(config, { ...options, requireStopLoss: true });
+    return { success: true, data: result };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// ===== NOTIFICATIONS =====
+
+ipcMain.handle('notification:getPrefs', async () => {
+  try {
+    return { success: true, data: await notificationService.getPrefs() };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('notification:updatePrefs', async (event, prefs) => {
+  try {
+    const data = await notificationService.updatePrefs(prefs);
+    return { success: true, data };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('notification:test', async () => {
+  try {
+    notificationService.test();
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// ===== DASHBOARD CACHE =====
+
+ipcMain.handle('dashboard:load', async () => {
+  try {
+    const data = await storageService.getSetting('dashboard_cache', null);
+    return { success: true, data };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('dashboard:save', async (event, cache) => {
+  try {
+    await storageService.saveSetting('dashboard_cache', cache);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('dashboard:setPaused', async (event, paused) => {
+  notificationService.setFeedPaused(!!paused);
+  return { success: true, paused: !!paused };
 });
 
 // ===== SECURITY IPC HANDLERS =====
@@ -605,7 +855,7 @@ ipcMain.handle('security:storeCredentials', async (event, exchange, apiKey, apiS
     const Cls = ADAPTER_CLASSES[exchange];
     if (Cls) {
       const existing = exchangeAdapters.get(exchange);
-      const isTestnet = existing ? existing.isTestnet : true;
+      const isTestnet = existing ? existing.isTestnet : false;
       exchangeAdapters.set(exchange, new Cls({ apiKey, apiSecret, passphrase, isTestnet }));
     }
     return { success: true };
@@ -620,7 +870,7 @@ ipcMain.handle('security:loadCredentials', async (event, exchange) => {
       const Cls = ADAPTER_CLASSES[exchange];
       if (Cls) {
         const existing = exchangeAdapters.get(exchange);
-        const isTestnet = existing ? existing.isTestnet : true;
+        const isTestnet = existing ? existing.isTestnet : false;
         exchangeAdapters.set(exchange, new Cls({ ...creds, isTestnet }));
       }
       return { success: true, hasCredentials: true };
@@ -635,14 +885,59 @@ ipcMain.handle('exchange:configure', async (event, { exchange, config }) => {
   try {
     const Cls = ADAPTER_CLASSES[exchange];
     if (!Cls) throw new Error(`Unknown exchange: ${exchange}`);
-    exchangeAdapters.set(exchange, new Cls(config));
-    await storageService.saveSetting(`exchange_config_${exchange}`, { exchange, isTestnet: config.isTestnet });
+    const isTestnet = config.isTestnet ?? config.testnet ?? false;
+    const adapterConfig = { ...config, isTestnet };
+    exchangeAdapters.set(exchange, new Cls(adapterConfig));
+    await storageService.saveSetting(`exchange_config_${exchange}`, { exchange, isTestnet });
+    if (exchange === 'binance') {
+      await storageService.saveSetting('exchange_mode_binance', isTestnet ? 'testnet' : 'mainnet');
+      BinanceAPI.setDefaultTestnetMode(isTestnet);
+    }
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('exchange:setMode', async (event, { exchange, mode }) => {
+  try {
+    const isTestnet = mode === 'testnet';
+    const Cls = ADAPTER_CLASSES[exchange];
+    if (!Cls) throw new Error(`Unknown exchange: ${exchange}`);
+    const existing = exchangeAdapters.get(exchange);
+    const creds = await keyVault.getExchangeCredentials(exchange);
+    const adapterConfig = {
+      ...(creds || {}),
+      isTestnet,
+      ...(existing?.apiConfig || {}),
+    };
+    exchangeAdapters.set(exchange, new Cls(adapterConfig));
+    await storageService.saveSetting(`exchange_config_${exchange}`, { exchange, isTestnet });
+    if (exchange === 'binance') {
+      await storageService.saveSetting('exchange_mode_binance', mode);
+      BinanceAPI.setDefaultTestnetMode(isTestnet);
+    }
+    return { success: true, mode, isTestnet };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('exchange:list', async () => {
-  return { success: true, data: Array.from(exchangeAdapters.keys()) };
+  const exchanges = [];
+  for (const [name, adapter] of exchangeAdapters.entries()) {
+    const creds = await keyVault.getExchangeCredentials(name);
+    const savedConfig = await storageService.getSetting(`exchange_config_${name}`, {});
+    let connected = false;
+    try {
+      await adapter.ping();
+      connected = true;
+    } catch { /* not connected */ }
+    exchanges.push({
+      exchange: name,
+      configured: !!creds?.apiKey,
+      connected,
+      isTestnet: adapter.isTestnet ?? savedConfig.isTestnet ?? false,
+      mode: (adapter.isTestnet ?? savedConfig.isTestnet) ? 'testnet' : 'mainnet',
+    });
+  }
+  return { success: true, exchanges };
 });
 
 ipcMain.handle('exchange:ping', async (event, exchange) => {
@@ -802,6 +1097,13 @@ ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
         });
 
         // Notify UI of trade execution
+        notificationService.notifyBotSignal({
+          symbol: config.symbol,
+          side: result.action,
+          price: result.price,
+          reason: result.reason,
+          strategy: config.strategy,
+        });
         event.reply('trade-executed', {
           botId: botId,
           time: new Date().toISOString(),
@@ -1028,15 +1330,22 @@ async function executeTradeStrategy(config, botState) {
 
     // Execute strategy
     let signal;
+    const strategyParams = config.strategyParams || {};
     switch (config.strategy) {
       case 'simpleMovingAverage':
-        signal = executeSimpleMovingAverage(candles);
+        signal = executeSimpleMovingAverage(candles, strategyParams.shortPeriod, strategyParams.longPeriod);
         break;
       case 'relativeStrengthIndex':
-        signal = executeRSIStrategy(candles);
+        signal = executeRSIStrategy(candles, strategyParams.period, strategyParams.overbought, strategyParams.oversold);
         break;
       case 'bollingerBands':
-        signal = executeBollingerBandsStrategy(candles, currentPrice);
+        signal = executeBollingerBandsStrategy(candles, currentPrice, strategyParams.period, strategyParams.stdDevMultiplier);
+        break;
+      case 'macd':
+        signal = executeMACDStrategy(candles, strategyParams.fastPeriod, strategyParams.slowPeriod, strategyParams.signalPeriod);
+        break;
+      case 'composed':
+        signal = executeComposedStrategy(candles, config.composedConfig, currentPrice);
         break;
       default:
         signal = { action: 'HOLD', reason: 'Unknown strategy' };
@@ -1056,93 +1365,6 @@ async function executeTradeStrategy(config, botState) {
     console.error(`[${botState.botId}] Error in strategy execution:`, error.message);
     throw error;
   }
-}
-
-// Strategy implementations (simplified for demo)
-function executeSimpleMovingAverage(candles) {
-  const closePrices = candles.map(candle => candle.close);
-  const shortSMA = calculateSMA(closePrices, 5);
-  const longSMA = calculateSMA(closePrices, 20);
-
-  if (shortSMA.length < 2 || longSMA.length < 2) {
-    return { action: 'HOLD', reason: 'Insufficient data for SMA calculation' };
-  }
-
-  const currentShort = shortSMA[shortSMA.length - 1];
-  const previousShort = shortSMA[shortSMA.length - 2];
-  const currentLong = longSMA[longSMA.length - 1];
-  const previousLong = longSMA[longSMA.length - 2];
-
-  if (previousShort <= previousLong && currentShort > currentLong) {
-    return { action: 'BUY', reason: 'SMA bullish crossover detected' };
-  }
-
-  if (previousShort >= previousLong && currentShort < currentLong) {
-    return { action: 'SELL', reason: 'SMA bearish crossover detected' };
-  }
-
-  return { action: 'HOLD', reason: 'No SMA crossover signal' };
-}
-
-function executeRSIStrategy(candles, period = 14, overbought = 70, oversold = 30) {
-  const closes = candles.map(c => c.close);
-  if (closes.length < period + 1) {
-    return { action: 'HOLD', reason: 'Insufficient data for RSI calculation' };
-  }
-
-  // Wilder's smoothing RSI
-  const deltas = [];
-  for (let i = 1; i < closes.length; i++) deltas.push(closes[i] - closes[i - 1]);
-
-  const gains = deltas.map(d => d > 0 ? d : 0);
-  const losses = deltas.map(d => d < 0 ? -d : 0);
-
-  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
-
-  for (let i = period; i < deltas.length; i++) {
-    avgGain = (avgGain * (period - 1) + gains[i]) / period;
-    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
-  }
-
-  const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
-  const rsi = 100 - (100 / (1 + rs));
-
-  if (rsi < oversold) return { action: 'BUY', reason: `RSI oversold (${rsi.toFixed(1)})` };
-  if (rsi > overbought) return { action: 'SELL', reason: `RSI overbought (${rsi.toFixed(1)})` };
-  return { action: 'HOLD', reason: `RSI neutral (${rsi.toFixed(1)})` };
-}
-
-function executeBollingerBandsStrategy(candles, currentPrice, period = 20, stdDevMultiplier = 2) {
-  const closes = candles.map(c => c.close);
-  if (closes.length < period) {
-    return { action: 'HOLD', reason: 'Insufficient data for Bollinger Bands' };
-  }
-
-  const slice = closes.slice(-period);
-  const sma = slice.reduce((a, b) => a + b, 0) / period;
-  const variance = slice.reduce((sum, p) => sum + Math.pow(p - sma, 2), 0) / period;
-  const stdDev = Math.sqrt(variance);
-
-  const upperBand = sma + stdDevMultiplier * stdDev;
-  const lowerBand = sma - stdDevMultiplier * stdDev;
-
-  if (currentPrice <= lowerBand) {
-    return { action: 'BUY', reason: `Price at lower Bollinger Band (${lowerBand.toFixed(4)})` };
-  }
-  if (currentPrice >= upperBand) {
-    return { action: 'SELL', reason: `Price at upper Bollinger Band (${upperBand.toFixed(4)})` };
-  }
-  return { action: 'HOLD', reason: `Price within Bollinger Bands (${lowerBand.toFixed(4)} - ${upperBand.toFixed(4)})` };
-}
-
-function calculateSMA(prices, period) {
-  const result = [];
-  for (let i = period - 1; i < prices.length; i++) {
-    const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-    result.push(sum / period);
-  }
-  return result;
 }
 
 function setupApplicationMenu() {

@@ -13,7 +13,7 @@ class BybitAdapter extends ExchangeAdapter {
   constructor(config = {}) {
     super(config);
     this.name = 'bybit';
-    this.isTestnet = config.isTestnet !== false;
+    this.isTestnet = config.isTestnet === true;
   }
 
   get baseUrl() {
@@ -196,10 +196,44 @@ class BybitAdapter extends ExchangeAdapter {
     return map[interval] || 900000;
   }
 
-  async subscribeToTicker(symbol, callback) { return null; }
+  async subscribeToTicker(symbol, callback) {
+    const WebSocket = require('ws');
+    const topic = `tickers.${this.normalizeSymbol(symbol)}`;
+    const wsHost = this.isTestnet ? 'stream-testnet.bybit.com' : 'stream.bybit.com';
+    const ws = new WebSocket(`wss://${wsHost}/v5/public/spot`);
+    const id = `bybit_ticker_${topic}_${Date.now()}`;
+    ws.on('open', () => ws.send(JSON.stringify({ op: 'subscribe', args: [topic] })));
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.topic === topic && msg.data) {
+          const data = msg.data;
+          callback({
+            symbol,
+            price: parseFloat(data.lastPrice),
+            bid: parseFloat(data.bid1Price || data.lastPrice),
+            ask: parseFloat(data.ask1Price || data.lastPrice),
+            timestamp: Date.now(),
+          });
+        }
+      } catch { /* ignore */ }
+    });
+    ws.on('error', () => {});
+    this._tickerSubs = this._tickerSubs || new Map();
+    this._tickerSubs.set(id, ws);
+    return id;
+  }
+
+  async unsubscribe(subscriptionId) {
+    if (this._tickerSubs?.has(subscriptionId)) {
+      this._tickerSubs.get(subscriptionId).close();
+      this._tickerSubs.delete(subscriptionId);
+    }
+    return true;
+  }
+
   async subscribeToOrderBook(symbol, callback) { return null; }
   async subscribeToTrades(symbol, callback) { return null; }
-  async unsubscribe(subscriptionId) { return null; }
 }
 
 module.exports = { BybitAdapter };

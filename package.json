@@ -1,7 +1,8 @@
 {
   "name": "neutron-trader",
-  "version": "0.3.1",
+  "version": "0.4.1",
   "description": "Multi-exchange algorithmic trading platform with arbitrage detection, listing sniper, and DeFi integration",
+  "desktopName": "NeutronTrader",
   "author": {
     "name": "Igor Dunaev (NubleX)",
     "email": "id@idarti.com"
@@ -23,6 +24,7 @@
     "node-schedule": "^2.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-is": "^19.2.7",
     "recharts": "^3.8.1",
     "ws": "^8.21.0"
   },

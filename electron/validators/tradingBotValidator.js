@@ -1,7 +1,7 @@
 const { validateApiKeyFormat } = require('../security/encryption');
 
 const VALID_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
-const VALID_STRATEGIES = ['simpleMovingAverage', 'relativeStrengthIndex', 'bollingerBands'];
+const VALID_STRATEGIES = ['simpleMovingAverage', 'relativeStrengthIndex', 'bollingerBands', 'macd', 'composed'];
 const MIN_AMOUNT = 0.00001;
 const MAX_AMOUNT = 1_000_000;
 

@@ -5,8 +5,21 @@ const crypto = require('crypto');
 const https = require('https');
 const querystring = require('querystring');
 
-// Base URL for Binance Testnet
-const BASE_URL = 'testnet.binance.vision';
+// Base URL selection — default mainnet; override per-request via options.isTestnet
+let _defaultTestnet = false;
+
+function getBaseUrl(isTestnet) {
+  const useTestnet = isTestnet !== undefined ? isTestnet : _defaultTestnet;
+  return useTestnet ? 'testnet.binance.vision' : 'api.binance.com';
+}
+
+function setDefaultTestnetMode(isTestnet) {
+  _defaultTestnet = !!isTestnet;
+}
+
+function getDefaultTestnetMode() {
+  return _defaultTestnet;
+}
 
 /**
  * Creates an HMAC SHA256 signature for Binance API requests
@@ -21,8 +34,9 @@ function createSignature(queryString, apiSecret) {
 /**
  * Make a request to the Binance API
  */
-function makeRequest(path, method = 'GET', params = null, apiConfig = null) {
+function makeRequest(path, method = 'GET', params = null, apiConfig = null, requestOptions = {}) {
   return new Promise((resolve, reject) => {
+    const hostname = getBaseUrl(requestOptions.isTestnet ?? apiConfig?.isTestnet);
     let queryString = '';
     let postData = '';
 
@@ -55,14 +69,14 @@ function makeRequest(path, method = 'GET', params = null, apiConfig = null) {
 
     // Create request options
     const options = {
-      hostname: BASE_URL,
+      hostname,
       path: `/api/v3${path}${queryString ? `?${queryString}` : ''}`,
       method: method,
       headers: headers,
       timeout: 10000
     };
 
-    console.log(`Making ${method} request to: https://${BASE_URL}${options.path}`);
+    console.log(`Making ${method} request to: https://${hostname}${options.path}`);
 
     const req = https.request(options, (res) => {
       let data = '';
@@ -117,9 +131,9 @@ function makeRequest(path, method = 'GET', params = null, apiConfig = null) {
 /**
  * Test connectivity to the Binance API
  */
-async function ping() {
+async function ping(options = {}) {
   try {
-    const result = await makeRequest('/ping');
+    const result = await makeRequest('/ping', 'GET', null, null, options);
     return { status: 'connected', timestamp: new Date().toISOString() };
   } catch (error) {
     throw new Error(`Ping failed: ${error.message}`);
@@ -141,9 +155,9 @@ async function getServerTime() {
 /**
  * Get current price for a symbol
  */
-async function getCurrentPrice(symbol) {
+async function getCurrentPrice(symbol, options = {}) {
   try {
-    const result = await makeRequest('/ticker/price', 'GET', { symbol: symbol.toUpperCase() });
+    const result = await makeRequest('/ticker/price', 'GET', { symbol: symbol.toUpperCase() }, null, options);
     return {
       symbol: result.symbol,
       price: parseFloat(result.price),
@@ -157,9 +171,9 @@ async function getCurrentPrice(symbol) {
 /**
  * Get 24hr ticker statistics for a symbol
  */
-async function get24hrTicker(symbol) {
+async function get24hrTicker(symbol, options = {}) {
   try {
-    const result = await makeRequest('/ticker/24hr', 'GET', { symbol: symbol.toUpperCase() });
+    const result = await makeRequest('/ticker/24hr', 'GET', { symbol: symbol.toUpperCase() }, null, options);
     return {
       symbol: result.symbol,
       priceChange: parseFloat(result.priceChange),
@@ -197,7 +211,7 @@ async function getCandlesticks(symbol, interval, options = {}) {
     if (options.startTime) params.startTime = options.startTime;
     if (options.endTime) params.endTime = options.endTime;
 
-    const result = await makeRequest('/klines', 'GET', params);
+    const result = await makeRequest('/klines', 'GET', params, null, options);
 
     return result.map(candle => ({
       openTime: parseInt(candle[0]),
@@ -458,9 +472,9 @@ async function getOrderStatus(apiConfig, symbol, orderId) {
 /**
  * Get order book (depth) for a symbol
  */
-async function getOrderBook(symbol, limit = 20) {
+async function getOrderBook(symbol, limit = 20, options = {}) {
   try {
-    const result = await makeRequest('/depth', 'GET', { symbol: symbol.toUpperCase(), limit });
+    const result = await makeRequest('/depth', 'GET', { symbol: symbol.toUpperCase(), limit }, null, options);
     return result;
   } catch (error) {
     throw new Error(`Failed to get order book for ${symbol}: ${error.message}`);
@@ -470,9 +484,9 @@ async function getOrderBook(symbol, limit = 20) {
 /**
  * Get all listed symbols (exchange info)
  */
-async function getListedSymbols() {
+async function getListedSymbols(options = {}) {
   try {
-    const result = await makeRequest('/exchangeInfo', 'GET');
+    const result = await makeRequest('/exchangeInfo', 'GET', null, null, options);
     return result.symbols.map(s => s.symbol);
   } catch (error) {
     throw new Error(`Failed to get listed symbols: ${error.message}`);
@@ -542,5 +556,8 @@ module.exports = {
 
   // Utility
   createSignature,
-  makeRequest
+  makeRequest,
+  setDefaultTestnetMode,
+  getDefaultTestnetMode,
+  getBaseUrl,
 };

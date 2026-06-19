@@ -8,11 +8,16 @@ import {
   onSniperAlert, onNewListing
 } from '../services/sniperService';
 
+const EXCHANGES = ['binance', 'coinbase', 'kraken', 'okx', 'bybit'];
+
 const DEFAULT_CONFIG = {
-  exchange: 'binance',
+  exchange: ['binance'],
   allocationUSDT: 50,
+  maxAllocPerListing: 50,
+  maxConcurrentSnipes: 3,
   stopLossPct: 10,
-  sellWindowMs: 900000, // 15 min default
+  sellWindowMs: 900000,
+  dryRun: false,
 };
 
 function fmt(n, d = 2) { return Number(n).toFixed(d); }
@@ -51,7 +56,7 @@ function SnipeRow({ entry }) {
       <span style={{ color: '#aaa' }}>{entry.exchange}</span>
       <span>${fmt(entry.entryPrice || 0)}</span>
       <span style={{ color: isPending ? '#ff9800' : (pnl >= 0 ? '#4caf50' : '#f44336') }}>
-        {isPending ? 'OPEN' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)} USDT`}
+        {entry.dryRun ? 'DRY RUN' : isPending ? 'OPEN' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)} USDT`}
       </span>
       <span style={{ color: '#888', fontSize: '11px' }}>
         {entry.source || '—'}
@@ -116,8 +121,13 @@ export default function SniperPanel() {
   };
 
   const handleStartSniper = async () => {
-    await updateSniperConfig(config);
-    const result = await startSniper(config);
+    const payload = {
+      ...config,
+      sellAfterMs: config.sellWindowMs,
+      exchange: config.exchange,
+    };
+    await updateSniperConfig(payload);
+    const result = await startSniper(payload);
     if (result?.success !== false) setRunning(true);
   };
 
@@ -233,18 +243,46 @@ export default function SniperPanel() {
         <div className="card" style={{ maxWidth: '400px' }}>
           <h3 style={{ fontSize: '14px', marginBottom: '16px' }}>Sniper Configuration</h3>
           <div className="form-group">
-            <label>Target Exchange</label>
-            <select value={config.exchange} onChange={e => setConfig(p => ({ ...p, exchange: e.target.value }))}
-              style={{ width: '100%', padding: '8px', background: '#1a1a1a', color: '#fff', border: '1px solid #333', borderRadius: '4px' }}>
-              {['binance', 'coinbase', 'kraken', 'okx', 'bybit'].map(ex => (
-                <option key={ex} value={ex}>{ex}</option>
+            <label>Target Exchanges</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {EXCHANGES.map(ex => (
+                <label key={ex} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
+                  <input type="checkbox" checked={(config.exchange || []).includes(ex)}
+                    onChange={e => {
+                      setConfig(p => {
+                        const current = Array.isArray(p.exchange) ? p.exchange : [p.exchange].filter(Boolean);
+                        const next = e.target.checked
+                          ? [...new Set([...current, ex])]
+                          : current.filter(x => x !== ex);
+                        return { ...p, exchange: next.length ? next : ['binance'] };
+                      });
+                    }} />
+                  {ex}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
           <div className="form-group">
             <label>Allocation per snipe (USDT)</label>
             <input type="number" value={config.allocationUSDT}
               onChange={e => setConfig(p => ({ ...p, allocationUSDT: parseFloat(e.target.value) }))} />
+          </div>
+          <div className="form-group">
+            <label>Max per listing (USDT)</label>
+            <input type="number" value={config.maxAllocPerListing}
+              onChange={e => setConfig(p => ({ ...p, maxAllocPerListing: parseFloat(e.target.value) }))} />
+          </div>
+          <div className="form-group">
+            <label>Max concurrent snipes</label>
+            <input type="number" value={config.maxConcurrentSnipes}
+              onChange={e => setConfig(p => ({ ...p, maxConcurrentSnipes: parseInt(e.target.value) }))} />
+          </div>
+          <div className="form-group">
+            <label>
+              <input type="checkbox" checked={config.dryRun}
+                onChange={e => setConfig(p => ({ ...p, dryRun: e.target.checked }))} />
+              {' '}Dry-run mode (no real orders)
+            </label>
           </div>
           <div className="form-group">
             <label>Stop Loss (%)</label>
