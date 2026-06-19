@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.0.2",
     "concurrently": "^10.0.3",
     "cross-env": "^10.0.0",
     "electron": "^39.8.5",
@@ -38,7 +38,7 @@
     "eslint-plugin-react": "^7.37.5",
     "globals": "^16.4.0",
     "rimraf": "^6.0.1",
-    "vite": "^6.3.5",
+    "vite": "^8.0.16",
     "wait-on": "^9.0.0"
   }
 }
