@@ -11,8 +11,6 @@
 
 </div>
 
-## ⚠️ ALPHA VERSION WARNING ⚠️
-
 ### Version: 0.4.1
 
 **A multi-exchange algorithmic trading desktop platform with live arbitrage detection, listing sniper, strategy backtesting, and DeFi integration — built with Electron and React.**
