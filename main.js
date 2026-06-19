@@ -3,11 +3,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-// normalize electron-is-dev (works if module exports boolean or a { default: boolean } shape)
-const _isDevModule = require('electron-is-dev');
-const isDev = (typeof _isDevModule === 'boolean')
-  ? _isDevModule
-  : Boolean(_isDevModule && (_isDevModule.default ?? _isDevModule));
+const isDev = !app.isPackaged;
 const url = require('url');
 const BinanceAPI = require('./electron/binanceApi');
 const schedule = require('node-schedule');
@@ -28,6 +24,7 @@ const { CoinbaseAdapter } = require('./electron/exchanges/coinbaseAdapter');
 const { KrakenAdapter } = require('./electron/exchanges/krakenAdapter');
 const { OKXAdapter } = require('./electron/exchanges/okxAdapter');
 const { BybitAdapter } = require('./electron/exchanges/bybitAdapter');
+const TradingBotValidator = require('./electron/validators/tradingBotValidator');
 const activeBots = new Map();
 
 const ADAPTER_CLASSES = {
@@ -714,12 +711,15 @@ ipcMain.handle('exchange:symbols', async (event, exchange) => {
 // ===== TRADING BOT IPC HANDLERS =====
 
 let activeTradingBots = new Map();
+const tradingBotValidator = new TradingBotValidator(riskManager.config);
 
 // Start trading bot with full configuration persistence
 ipcMain.on('start-trading-bot', withErrorHandling(async (event, config) => {
-  // Validate configuration
-  if (!config || !config.apiConfig || !config.symbol || !config.strategy) {
-    event.reply('trading-error', 'Invalid configuration provided');
+  try {
+    tradingBotValidator.validateConfig(config);
+  } catch (validationError) {
+    event.reply('trading-error', `Invalid configuration: ${validationError.message}`);
+    console.error('Config validation failed:', validationError.message);
     return;
   }
 
