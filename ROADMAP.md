@@ -1,6 +1,6 @@
 # NeutronTrader Roadmap
 
-## v0.3.0-alpha ← current
+## v0.3.1 ← current
 
 What shipped in this release:
 
