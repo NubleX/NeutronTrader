@@ -4,6 +4,12 @@
 const isElectronAvailable = () =>
   typeof window !== 'undefined' && window.electronAPI;
 
+export async function getArbitrageStatus() {
+  if (!isElectronAvailable()) return { running: false };
+  const result = await window.electronAPI.arbitrage.getStatus();
+  return result?.data || { running: false };
+}
+
 export async function startArbitrage(config) {
   if (!isElectronAvailable()) return { success: false, error: 'Not in Electron' };
   return window.electronAPI.arbitrage.start(config);
@@ -14,9 +20,10 @@ export async function stopArbitrage() {
   return window.electronAPI.arbitrage.stop();
 }
 
-export async function getArbitrageHistory() {
+export async function getArbitrageHistory(filters = {}) {
   if (!isElectronAvailable()) return [];
-  return window.electronAPI.arbitrage.getHistory();
+  const result = await window.electronAPI.arbitrage.getHistory(filters);
+  return result?.data || [];
 }
 
 export async function startPriceFeed(symbols, options) {

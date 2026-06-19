@@ -11,7 +11,13 @@ export async function configureExchange(exchange, config) {
 
 export async function listExchanges() {
   if (!isElectronAvailable()) return { exchanges: [] };
-  return window.electronAPI.exchange.list();
+  const result = await window.electronAPI.exchange.list();
+  return { exchanges: result?.exchanges || result?.data || [] };
+}
+
+export async function setExchangeMode(exchange, mode) {
+  if (!isElectronAvailable()) return { success: false };
+  return window.electronAPI.exchange.setMode(exchange, mode);
 }
 
 export async function pingExchange(exchange) {

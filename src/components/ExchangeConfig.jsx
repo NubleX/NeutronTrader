@@ -1,30 +1,40 @@
 // NeutronTrader - Exchange configuration panel
-// src/components/ExchangeConfig.jsx
 
 import { useState, useEffect } from 'react';
-import { listExchanges, configureExchange, pingExchange } from '../services/multiExchangeService';
+import { listExchanges, configureExchange, pingExchange, setExchangeMode } from '../services/multiExchangeService';
 
 const SUPPORTED_EXCHANGES = [
-  { id: 'binance',  label: 'Binance',   hasPassphrase: false, testnetNote: 'testnet.binance.vision' },
-  { id: 'coinbase', label: 'Coinbase',  hasPassphrase: false, testnetNote: 'Sandbox via API flag' },
-  { id: 'kraken',   label: 'Kraken',    hasPassphrase: false, testnetNote: 'No testnet — use small amounts' },
-  { id: 'okx',      label: 'OKX',       hasPassphrase: true,  testnetNote: 'Demo trading enabled by default' },
-  { id: 'bybit',    label: 'Bybit',     hasPassphrase: false, testnetNote: 'testnet.bybit.com' },
+  { id: 'binance',  label: 'Binance',   hasPassphrase: false, supportsModeToggle: true, testnetNote: 'testnet.binance.vision' },
+  { id: 'coinbase', label: 'Coinbase',  hasPassphrase: false, supportsModeToggle: false, testnetNote: 'Sandbox via API flag' },
+  { id: 'kraken',   label: 'Kraken',    hasPassphrase: false, supportsModeToggle: false, testnetNote: 'No testnet — use small amounts' },
+  { id: 'okx',      label: 'OKX',       hasPassphrase: true,  supportsModeToggle: false, testnetNote: 'Demo trading enabled by default' },
+  { id: 'bybit',    label: 'Bybit',     hasPassphrase: false, supportsModeToggle: false, testnetNote: 'testnet.bybit.com' },
 ];
 
-function ExchangeRow({ exchange, status, onSave, onPing }) {
+function ExchangeRow({ exchange, status, onSave, onPing, onModeChange }) {
   const [expanded, setExpanded] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [passphrase, setPassphrase] = useState('');
-  const [testnet, setTestnet] = useState(true);
+  const [testnet, setTestnet] = useState(status?.isTestnet ?? false);
   const [saving, setSaving] = useState(false);
   const [pinging, setPinging] = useState(false);
+  const [modeSaving, setModeSaving] = useState(false);
+
+  useEffect(() => {
+    setTestnet(status?.isTestnet ?? false);
+  }, [status?.isTestnet]);
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    await onSave(exchange.id, { apiKey, apiSecret, passphrase: exchange.hasPassphrase ? passphrase : undefined, testnet });
+    await onSave(exchange.id, {
+      apiKey,
+      apiSecret,
+      passphrase: exchange.hasPassphrase ? passphrase : undefined,
+      testnet,
+      isTestnet: testnet,
+    });
     setSaving(false);
     setExpanded(false);
     setApiKey('');
@@ -38,13 +48,22 @@ function ExchangeRow({ exchange, status, onSave, onPing }) {
     setPinging(false);
   };
 
+  const handleModeToggle = async () => {
+    if (!exchange.supportsModeToggle) return;
+    setModeSaving(true);
+    const nextMode = (status?.mode === 'testnet' || status?.isTestnet) ? 'mainnet' : 'testnet';
+    await onModeChange(exchange.id, nextMode);
+    setModeSaving(false);
+  };
+
   const configured = status?.configured;
   const connected = status?.connected;
+  const isMainnet = status?.mode === 'mainnet' || status?.isTestnet === false;
 
   return (
     <div className="exchange-row card" style={{ marginBottom: '12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 'bold', width: '80px' }}>{exchange.label}</span>
           <span style={{
             fontSize: '12px', padding: '2px 8px', borderRadius: '4px',
@@ -53,6 +72,21 @@ function ExchangeRow({ exchange, status, onSave, onPing }) {
           }}>
             {configured ? (connected ? 'CONNECTED' : 'CONFIGURED') : 'NOT SET'}
           </span>
+          {exchange.supportsModeToggle && (
+            <button
+              onClick={handleModeToggle}
+              disabled={modeSaving}
+              style={{
+                fontSize: '12px', padding: '2px 10px', cursor: 'pointer',
+                background: isMainnet ? '#1a3a1a' : '#3a2a1a',
+                color: isMainnet ? '#4caf50' : '#ff9800',
+                border: '1px solid #333', borderRadius: '4px',
+              }}
+              title="Switch between live mainnet and testnet API"
+            >
+              {modeSaving ? '...' : isMainnet ? 'MAINNET' : 'TESTNET'}
+            </button>
+          )}
           {configured && (
             <button
               onClick={handlePing}
@@ -84,12 +118,14 @@ function ExchangeRow({ exchange, status, onSave, onPing }) {
               <input type="password" value={passphrase} onChange={e => setPassphrase(e.target.value)} required placeholder="API passphrase" />
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input type="checkbox" id={`testnet-${exchange.id}`} checked={testnet} onChange={e => setTestnet(e.target.checked)} />
-            <label htmlFor={`testnet-${exchange.id}`} style={{ margin: 0, cursor: 'pointer' }}>
-              Use Testnet ({exchange.testnetNote})
-            </label>
-          </div>
+          {exchange.supportsModeToggle && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" id={`testnet-${exchange.id}`} checked={testnet} onChange={e => setTestnet(e.target.checked)} />
+              <label htmlFor={`testnet-${exchange.id}`} style={{ margin: 0, cursor: 'pointer' }}>
+                Use Testnet ({exchange.testnetNote})
+              </label>
+            </div>
+          )}
           <button type="submit" className="primary-btn" disabled={saving} style={{ alignSelf: 'flex-start' }}>
             {saving ? 'Saving...' : 'Save & Connect'}
           </button>
@@ -127,11 +163,16 @@ export default function ExchangeConfig() {
     await refreshStatuses();
   };
 
+  const handleModeChange = async (exchangeId, mode) => {
+    await setExchangeMode(exchangeId, mode);
+    await refreshStatuses();
+  };
+
   return (
     <div style={{ maxWidth: '700px', margin: '0 auto' }}>
       <h2 style={{ marginBottom: '8px' }}>Exchange Configuration</h2>
       <p style={{ color: '#aaa', marginBottom: '24px', fontSize: '14px' }}>
-        API keys are encrypted with AES-256-GCM and stored in the OS keychain. The renderer never holds plaintext keys after submission.
+        API keys are encrypted with AES-256-GCM and stored in the OS keychain. Binance supports a MAINNET/TESTNET toggle for market data and trading.
       </p>
 
       {SUPPORTED_EXCHANGES.map(ex => (
@@ -141,6 +182,7 @@ export default function ExchangeConfig() {
           status={statuses[ex.id]}
           onSave={handleSave}
           onPing={handlePing}
+          onModeChange={handleModeChange}
         />
       ))}
 

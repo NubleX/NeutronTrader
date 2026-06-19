@@ -4,7 +4,7 @@ module.exports = {
 
   // Output to release/ so it never collides with Vite's dist/ folder
   directories: {
-    buildResources: 'public',
+    buildResources: 'assets',
     output: 'release'
   },
 

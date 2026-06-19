@@ -252,12 +252,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (symbols, options) => ipcRenderer.invoke('pricefeed:start', symbols, options),
     stop: () => ipcRenderer.invoke('pricefeed:stop'),
     getSnapshot: () => ipcRenderer.invoke('pricefeed:snapshot'),
-    getSymbolPrices: (symbol) => ipcRenderer.invoke('pricefeed:symbolPrices', symbol)
+    getSymbolPrices: (symbol) => ipcRenderer.invoke('pricefeed:symbolPrices', symbol),
+    setMode: (mode) => ipcRenderer.invoke('pricefeed:setMode', mode),
+    getLatency: () => ipcRenderer.invoke('pricefeed:latency'),
+    onSnapshot: (callback) => {
+      const handler = (_, data) => callback(data);
+      ipcRenderer.on('prices:snapshot', handler);
+      return () => ipcRenderer.removeListener('prices:snapshot', handler);
+    },
   },
 
   // Multi-exchange API
   exchange: {
     configure: (exchange, config) => ipcRenderer.invoke('exchange:configure', { exchange, config }),
+    setMode: (exchange, mode) => ipcRenderer.invoke('exchange:setMode', { exchange, mode }),
     list: () => ipcRenderer.invoke('exchange:list'),
     ping: (exchange) => ipcRenderer.invoke('exchange:ping', exchange),
     getPrice: (exchange, symbol) => ipcRenderer.invoke('exchange:price', exchange, symbol),
@@ -306,7 +314,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   arbitrage: {
     start: (config) => ipcRenderer.invoke('arb:start', config),
     stop: () => ipcRenderer.invoke('arb:stop'),
-    getHistory: () => ipcRenderer.invoke('arb:history'),
+    getStatus: () => ipcRenderer.invoke('arb:status'),
+    getHistory: (filters) => ipcRenderer.invoke('arb:history', filters),
     onExecuted: (callback) => {
       ipcRenderer.on('arb:executed', (_, data) => callback(data));
       return () => ipcRenderer.removeAllListeners('arb:executed');
@@ -328,6 +337,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStatus: () => ipcRenderer.invoke('risk:status'),
     resetCircuitBreaker: () => ipcRenderer.invoke('risk:resetCircuitBreaker'),
     updateConfig: (config) => ipcRenderer.invoke('risk:updateConfig', config)
+  },
+
+  portfolio: {
+    getSnapshot: () => ipcRenderer.invoke('portfolio:snapshot'),
+    getBscBalances: (address) => ipcRenderer.invoke('portfolio:getBscBalances', address),
+  },
+
+  backtest: {
+    run: (config) => ipcRenderer.invoke('backtest:run', config),
+    onProgress: (callback) => {
+      const handler = (_, data) => callback(data);
+      ipcRenderer.on('backtest:progress', handler);
+      return () => ipcRenderer.removeListener('backtest:progress', handler);
+    },
+  },
+
+  strategy: {
+    save: (config) => ipcRenderer.invoke('strategy:save', config),
+    list: () => ipcRenderer.invoke('strategy:list'),
+    delete: (name) => ipcRenderer.invoke('strategy:delete', name),
+    validate: (config, options) => ipcRenderer.invoke('strategy:validate', config, options),
+  },
+
+  notification: {
+    getPrefs: () => ipcRenderer.invoke('notification:getPrefs'),
+    updatePrefs: (prefs) => ipcRenderer.invoke('notification:updatePrefs', prefs),
+    test: () => ipcRenderer.invoke('notification:test'),
+  },
+
+  dashboard: {
+    load: () => ipcRenderer.invoke('dashboard:load'),
+    save: (data) => ipcRenderer.invoke('dashboard:save', data),
+    setPaused: (paused) => ipcRenderer.invoke('dashboard:setPaused', paused),
   },
 
   // File system operations (for trading logs, configs, etc.)

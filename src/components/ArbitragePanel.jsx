@@ -3,25 +3,38 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  startArbitrage, stopArbitrage, getArbitrageHistory,
-  startPriceFeed, stopPriceFeed, getPriceFeedSnapshot,
+  startArbitrage, stopArbitrage, getArbitrageHistory, getArbitrageStatus,
+  getPriceFeedSnapshot,
   onArbitrageExecuted, getRiskStatus, resetCircuitBreaker, updateRiskConfig
 } from '../services/arbitrageService';
 import { onArbitrageOpportunity } from '../services/multiExchangeService';
 
 const DEFAULT_CONFIG = {
-  minProfitPct: 0.5,
+  minProfitPct: 0.3,
   maxPositionUSDT: 100,
-  symbols: ['BTC/USDT', 'ETH/USDT', 'BNB/USDT'],
-  exchanges: ['binance', 'coinbase', 'kraken'],
+  symbols: ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT'],
+  exchanges: ['binance', 'coinbase', 'kraken', 'okx', 'bybit'],
 };
 
 const DEFAULT_RISK = {
-  minProfitPct: 0.5,
+  minProfitPct: 0.3,
   maxPositionUSDT: 100,
   dailyLossLimitUSDT: 50,
   maxOpenPositions: 3,
 };
+
+const CONFIG_STORAGE_KEY = 'neutron_arb_config';
+
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    return raw ? { ...DEFAULT_CONFIG, ...JSON.parse(raw) } : { ...DEFAULT_CONFIG };
+  } catch { return { ...DEFAULT_CONFIG }; }
+}
+
+function persistConfig(cfg) {
+  try { localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg)); } catch {}
+}
 
 function fmt(n, decimals = 4) {
   return Number(n).toFixed(decimals);
@@ -49,24 +62,28 @@ function OpportunityRow({ opp }) {
 
 function HistoryRow({ entry }) {
   const pnl = entry.pnl || 0;
+  const isOpp = entry.arbType === 'opportunity' || entry.type === 'opportunity';
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '140px 120px 90px 90px 1fr',
+      display: 'grid', gridTemplateColumns: '100px 140px 120px 90px 90px 1fr',
       gap: '8px', fontSize: '13px', padding: '6px 0',
       borderBottom: '1px solid #2a2a2a', alignItems: 'center'
     }}>
+      <span style={{ color: '#888', fontSize: '11px' }}>{isOpp ? 'OPP' : 'EXEC'}</span>
       <span style={{ fontWeight: 'bold' }}>{entry.symbol}</span>
       <span style={{ color: '#aaa', fontSize: '11px' }}>
         {entry.buyExchange} → {entry.sellExchange}
       </span>
-      <span style={{ color: pnl >= 0 ? '#4caf50' : '#f44336' }}>
-        {pnl >= 0 ? '+' : ''}{fmt(pnl, 2)} USDT
+      <span style={{ color: isOpp ? '#ff9800' : (pnl >= 0 ? '#4caf50' : '#f44336') }}>
+        {isOpp ? `${entry.netProfitPct || entry.netProfit || 0}%` : `${pnl >= 0 ? '+' : ''}${fmt(pnl, 2)} USDT`}
       </span>
-      <span style={{ color: entry.success ? '#4caf50' : '#f44336' }}>
-        {entry.success ? 'OK' : 'FAILED'}
+      <span style={{ color: entry.success !== false ? '#4caf50' : '#f44336' }}>
+        {isOpp ? '—' : (entry.success ? 'OK' : 'FAILED')}
       </span>
       <span style={{ color: '#888', fontSize: '11px' }}>
-        {entry.executedAt ? new Date(entry.executedAt).toLocaleTimeString() : '—'}
+        {entry.executedAt || entry.timestamp
+          ? new Date(entry.executedAt || entry.timestamp).toLocaleString()
+          : '—'}
       </span>
     </div>
   );
@@ -78,10 +95,17 @@ export default function ArbitragePanel() {
   const [history, setHistory] = useState([]);
   const [snapshot, setSnapshot] = useState({});
   const [riskStatus, setRiskStatus] = useState(null);
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [config, setConfig] = useState(loadConfig);
   const [riskConfig, setRiskConfig] = useState(DEFAULT_RISK);
   const [pnlTotal, setPnlTotal] = useState(0);
   const [tab, setTab] = useState('live');
+  const [historyFilters, setHistoryFilters] = useState({
+    arbType: '',
+    symbol: '',
+    minProfitPct: '',
+    startTime: '',
+    endTime: '',
+  });
   const cleanupRef = useRef([]);
   const snapshotTimer = useRef(null);
 
@@ -101,17 +125,31 @@ export default function ArbitragePanel() {
 
     cleanupRef.current = [cleanupOpp, cleanupExec];
 
+    getArbitrageStatus().then(status => {
+      if (status?.running) {
+        setRunning(true);
+        startSnapshotPolling();
+      }
+    });
+
     return () => {
       cleanupRef.current.forEach(fn => typeof fn === 'function' && fn());
       if (snapshotTimer.current) clearInterval(snapshotTimer.current);
     };
   }, []);
 
-  const loadHistory = async () => {
-    const h = await getArbitrageHistory();
+  const loadHistory = async (filters = historyFilters) => {
+    const payload = {};
+    if (filters.arbType) payload.arbType = filters.arbType;
+    if (filters.symbol) payload.symbol = filters.symbol;
+    if (filters.minProfitPct) payload.minProfitPct = parseFloat(filters.minProfitPct);
+    if (filters.startTime) payload.startTime = new Date(filters.startTime).getTime();
+    if (filters.endTime) payload.endTime = new Date(filters.endTime).getTime();
+    const h = await getArbitrageHistory(payload);
     if (Array.isArray(h)) {
-      setHistory(h.slice(0, 100));
-      const total = h.reduce((s, e) => s + (e.pnl || 0), 0);
+      setHistory(h.slice(0, 200));
+      const executed = h.filter(e => e.arbType === 'executed' || e.type === 'executed');
+      const total = executed.reduce((s, e) => s + (e.pnl || 0), 0);
       setPnlTotal(total);
     }
   };
@@ -129,10 +167,10 @@ export default function ArbitragePanel() {
   };
 
   const handleStart = async () => {
-    await startPriceFeed(config.symbols, { exchanges: config.exchanges });
     const result = await startArbitrage({
       minProfitPct: config.minProfitPct,
       maxPositionUSDT: config.maxPositionUSDT,
+      symbols: config.symbols,
     });
     if (result?.success !== false) {
       setRunning(true);
@@ -142,7 +180,6 @@ export default function ArbitragePanel() {
 
   const handleStop = async () => {
     await stopArbitrage();
-    await stopPriceFeed();
     setRunning(false);
     if (snapshotTimer.current) clearInterval(snapshotTimer.current);
   };
@@ -242,12 +279,38 @@ export default function ArbitragePanel() {
 
       {tab === 'history' && (
         <div className="card">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+            <div className="form-group">
+              <label>Type</label>
+              <select value={historyFilters.arbType}
+                onChange={e => setHistoryFilters(p => ({ ...p, arbType: e.target.value }))}
+                style={{ width: '100%', padding: '8px', background: '#1a1a1a', color: '#fff', border: '1px solid #333', borderRadius: '4px' }}>
+                <option value="">All</option>
+                <option value="opportunity">Opportunities</option>
+                <option value="executed">Executions</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Symbol</label>
+              <input value={historyFilters.symbol}
+                onChange={e => setHistoryFilters(p => ({ ...p, symbol: e.target.value }))}
+                placeholder="BTC/USDT" />
+            </div>
+            <div className="form-group">
+              <label>Min Profit %</label>
+              <input type="number" step="0.1" value={historyFilters.minProfitPct}
+                onChange={e => setHistoryFilters(p => ({ ...p, minProfitPct: e.target.value }))} />
+            </div>
+          </div>
+          <button className="primary-btn" onClick={() => loadHistory(historyFilters)} style={{ marginBottom: '12px' }}>
+            Apply Filters
+          </button>
           <div style={{
-            display: 'grid', gridTemplateColumns: '140px 120px 90px 90px 1fr',
+            display: 'grid', gridTemplateColumns: '100px 140px 120px 90px 90px 1fr',
             gap: '8px', fontSize: '11px', color: '#888', padding: '4px 0',
             borderBottom: '1px solid #333', marginBottom: '4px'
           }}>
-            <span>SYMBOL</span><span>ROUTE</span><span>P&L</span><span>STATUS</span><span>TIME</span>
+            <span>TYPE</span><span>SYMBOL</span><span>ROUTE</span><span>P&L / %</span><span>STATUS</span><span>TIME</span>
           </div>
           {history.length === 0 ? (
             <div style={{ color: '#555', padding: '20px 0', textAlign: 'center' }}>No executed trades yet</div>
@@ -263,18 +326,27 @@ export default function ArbitragePanel() {
             <h3 style={{ fontSize: '14px', marginBottom: '16px' }}>Engine Config</h3>
             <div className="form-group">
               <label>Min Profit % (after fees)</label>
-              <input type="number" step="0.1" value={config.minProfitPct}
-                onChange={e => setConfig(p => ({ ...p, minProfitPct: parseFloat(e.target.value) }))} />
+              <input type="number" step="0.05" value={config.minProfitPct}
+                onChange={e => {
+                  const next = { ...config, minProfitPct: parseFloat(e.target.value) };
+                  setConfig(next); persistConfig(next);
+                }} />
             </div>
             <div className="form-group">
               <label>Max Position Size (USDT)</label>
               <input type="number" value={config.maxPositionUSDT}
-                onChange={e => setConfig(p => ({ ...p, maxPositionUSDT: parseFloat(e.target.value) }))} />
+                onChange={e => {
+                  const next = { ...config, maxPositionUSDT: parseFloat(e.target.value) };
+                  setConfig(next); persistConfig(next);
+                }} />
             </div>
             <div className="form-group">
               <label>Symbols (comma-separated)</label>
               <input type="text" value={config.symbols.join(', ')}
-                onChange={e => setConfig(p => ({ ...p, symbols: e.target.value.split(',').map(s => s.trim()) }))} />
+                onChange={e => {
+                  const next = { ...config, symbols: e.target.value.split(',').map(s => s.trim()) };
+                  setConfig(next); persistConfig(next);
+                }} />
             </div>
           </div>
 

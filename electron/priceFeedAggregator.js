@@ -1,10 +1,9 @@
 // NeutronTrader - Cross-exchange price feed aggregator with arbitrage detection
 //
-// Polling strategy: each exchange is polled on its own staggered timer,
-// offset by STAGGER_MS apart. With 5 exchanges and 10s stagger, one
-// exchange is polled every 10 seconds — never all at once.
+// Supports REST polling (default) or WebSocket streams (Binance, Bybit).
 
 const EventEmitter = require('events');
+const { WebSocketPriceFeed } = require('./websocketPriceFeed');
 
 const EXCHANGE_FEES = {
   binance:  { taker: 0.001,  maker: 0.001  },
@@ -14,11 +13,10 @@ const EXCHANGE_FEES = {
   bybit:    { taker: 0.001,  maker: 0.001  },
 };
 
-// Historically strong cross-exchange arbitrage pairs
-const DEFAULT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'LINK/USDT'];
+const DEFAULT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'XRP/USDT', 'LINK/USDT'];
 
-const STAGGER_MS = 10000; // 10s between each exchange start
-const PER_EXCHANGE_INTERVAL_MS = 60000; // each exchange polls every 60s
+const STAGGER_MS = 10000;
+const PER_EXCHANGE_INTERVAL_MS = 60000;
 
 class PriceFeedAggregator extends EventEmitter {
   constructor(adapters, options = {}) {
@@ -26,21 +24,29 @@ class PriceFeedAggregator extends EventEmitter {
     this.adapters = adapters;
     this.pollIntervalMs = options.pollIntervalMs || PER_EXCHANGE_INTERVAL_MS;
     this.minProfitPct = options.minProfitPct || 0.3;
-    this.priceCache = new Map(); // "symbol:exchange" -> { price, bid, ask, timestamp }
-    this._timers = new Map();   // exchangeName -> intervalId
+    this.mode = options.mode || 'polling';
+    this.priceCache = new Map();
+    this._timers = new Map();
     this._symbols = [];
     this._running = false;
+    this._wsFeed = null;
+    this._wsOppHandler = null;
+    this._wsPriceHandler = null;
   }
 
   start(symbols = DEFAULT_SYMBOLS) {
     if (this._running) return;
     this._running = true;
     this._symbols = symbols;
-    console.log('[PriceFeed] Starting staggered aggregator for', symbols.join(', '));
 
+    if (this.mode === 'websocket') {
+      this._startWebSocket(symbols);
+      return;
+    }
+
+    console.log('[PriceFeed] Starting staggered REST aggregator for', symbols.join(', '));
     let offset = 0;
     for (const [name] of this.adapters.entries()) {
-      // Stagger each exchange start so they never fire simultaneously
       setTimeout(() => {
         if (!this._running) return;
         this._pollExchange(name);
@@ -51,18 +57,61 @@ class PriceFeedAggregator extends EventEmitter {
     }
   }
 
+  _startWebSocket(symbols) {
+    console.log('[PriceFeed] Starting WebSocket mode for', symbols.join(', '));
+    this._wsFeed = new WebSocketPriceFeed({ minProfitPct: this.minProfitPct });
+    this._wsOppHandler = (opp) => this.emit('arbitrage-opportunity', opp);
+    this._wsPriceHandler = ({ symbol, exchange, price, bid, ask, timestamp }) => {
+      const key = `${symbol}:${exchange}`;
+      this.priceCache.set(key, { price, bid, ask, timestamp });
+    };
+    this._wsFeed.on('arbitrage-opportunity', this._wsOppHandler);
+    this._wsFeed.on('price-update', this._wsPriceHandler);
+    this._wsSnapshotHandler = () => this.emit('snapshot-update', this.getPriceSnapshot());
+    this._wsFeed.on('price-update', this._wsSnapshotHandler);
+    this._wsFeed.start(symbols);
+  }
+
+  setMode(mode) {
+    const wasRunning = this._running;
+    if (wasRunning) this.stop();
+    this.mode = mode;
+    if (wasRunning) this.start(this._symbols);
+  }
+
   stop() {
     this._running = false;
     for (const [, id] of this._timers) clearInterval(id);
     this._timers.clear();
+    if (this._wsFeed) {
+      if (this._wsOppHandler) this._wsFeed.removeListener('arbitrage-opportunity', this._wsOppHandler);
+      if (this._wsPriceHandler) this._wsFeed.removeListener('price-update', this._wsPriceHandler);
+      if (this._wsSnapshotHandler) this._wsFeed.removeListener('price-update', this._wsSnapshotHandler);
+      this._wsFeed.stop();
+      this._wsFeed = null;
+    }
     console.log('[PriceFeed] Aggregator stopped');
   }
 
-  // Poll one exchange for all tracked symbols sequentially (not concurrent)
+  /** Add symbols to the active poll list without restarting the feed */
+  updateSymbols(symbols = []) {
+    const merged = [...new Set([...this._symbols, ...symbols.filter(Boolean)])];
+    if (merged.length === this._symbols.length) return this._symbols;
+    this._symbols = merged;
+    console.log('[PriceFeed] Symbols updated:', this._symbols.join(', '));
+    return this._symbols;
+  }
+
+  updateConfig(options = {}) {
+    if (options.minProfitPct != null) this.minProfitPct = options.minProfitPct;
+    if (options.pollIntervalMs != null) this.pollIntervalMs = options.pollIntervalMs;
+  }
+
   async _pollExchange(exchangeName) {
     const adapter = this.adapters.get(exchangeName);
     if (!adapter) return;
 
+    let anyUpdated = false;
     for (const symbol of this._symbols) {
       try {
         const data = await adapter.getCurrentPrice(symbol);
@@ -73,11 +122,13 @@ class PriceFeedAggregator extends EventEmitter {
           ask:   data.ask || data.price,
           timestamp: Date.now(),
         });
+        anyUpdated = true;
         this._detectArbitrage(symbol);
       } catch {
-        // Exchange doesn't support this symbol or is unreachable — skip silently
+        // skip unsupported symbols silently
       }
     }
+    if (anyUpdated) this.emit('snapshot-update', this.getPriceSnapshot());
   }
 
   _detectArbitrage(symbol) {
@@ -85,7 +136,7 @@ class PriceFeedAggregator extends EventEmitter {
     for (const [key, data] of this.priceCache.entries()) {
       const colon = key.lastIndexOf(':');
       if (key.slice(0, colon) !== symbol) continue;
-      if (Date.now() - data.timestamp > 120000) continue; // ignore stale (>2 min)
+      if (Date.now() - data.timestamp > 120000) continue;
       prices.push({ exchange: key.slice(colon + 1), ...data });
     }
 
@@ -117,14 +168,17 @@ class PriceFeedAggregator extends EventEmitter {
   }
 
   getPriceSnapshot() {
-    const snapshot = {};
-    for (const [key, data] of this.priceCache.entries()) {
-      snapshot[key] = data;
+    if (this._wsFeed) {
+      const wsSnap = this._wsFeed.getPriceSnapshot();
+      return { ...Object.fromEntries(this.priceCache), ...wsSnap };
     }
+    const snapshot = {};
+    for (const [key, data] of this.priceCache.entries()) snapshot[key] = data;
     return snapshot;
   }
 
   getPricesForSymbol(symbol) {
+    if (this._wsFeed) return this._wsFeed.getPricesForSymbol(symbol);
     const result = [];
     for (const [key, data] of this.priceCache.entries()) {
       const colon = key.lastIndexOf(':');
@@ -133,6 +187,11 @@ class PriceFeedAggregator extends EventEmitter {
       }
     }
     return result;
+  }
+
+  getLatencyMs() {
+    if (this._wsFeed) return this._wsFeed.getLatencyMs();
+    return null;
   }
 }
 

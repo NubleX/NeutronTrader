@@ -8,7 +8,16 @@ class BinanceAdapter extends ExchangeAdapter {
   constructor(config = {}) {
     super(config);
     this.name = 'binance';
-    this.isTestnet = config.isTestnet !== false;
+    this.isTestnet = config.isTestnet === true || config.testnet === true;
+    this.apiConfig = {
+      apiKey: config.apiKey,
+      apiSecret: config.apiSecret,
+      isTestnet: this.isTestnet,
+    };
+  }
+
+  _opts(extra = {}) {
+    return { isTestnet: this.isTestnet, ...extra };
   }
 
   get baseUrl() {
@@ -16,22 +25,26 @@ class BinanceAdapter extends ExchangeAdapter {
   }
 
   // ===== MARKET DATA =====
-  async ping() { return BinanceAPI.ping(); }
+  async ping() { return BinanceAPI.ping(this._opts()); }
 
   async getCurrentPrice(symbol) {
-    return BinanceAPI.getCurrentPrice(this.normalizeSymbol(symbol));
+    return BinanceAPI.getCurrentPrice(this.normalizeSymbol(symbol), this._opts());
   }
 
   async getOrderBook(symbol, limit = 20) {
-    return BinanceAPI.getOrderBook(this.normalizeSymbol(symbol), limit);
+    return BinanceAPI.getOrderBook(this.normalizeSymbol(symbol), limit, this._opts());
   }
 
   async getCandlesticks(symbol, interval, options = {}) {
-    return BinanceAPI.getCandlesticks(this.normalizeSymbol(symbol), interval, options);
+    return BinanceAPI.getCandlesticks(
+      this.normalizeSymbol(symbol),
+      interval,
+      this._opts(options)
+    );
   }
 
   async get24hrTicker(symbol) {
-    return BinanceAPI.get24hrTicker(this.normalizeSymbol(symbol));
+    return BinanceAPI.get24hrTicker(this.normalizeSymbol(symbol), this._opts());
   }
 
   // ===== ACCOUNT =====
@@ -73,7 +86,7 @@ class BinanceAdapter extends ExchangeAdapter {
 
   // ===== SYMBOLS =====
   async getListedSymbols() {
-    const raw = await BinanceAPI.getListedSymbols();
+    const raw = await BinanceAPI.getListedSymbols(this._opts());
     return raw.map(s => this.denormalizeSymbol(s));
   }
 
@@ -93,11 +106,42 @@ class BinanceAdapter extends ExchangeAdapter {
     return exchangeSymbol;
   }
 
-  // WebSocket stubs — full implementation via wsManager in main.js
-  async subscribeToTicker(symbol, callback) { return null; }
+  async subscribeToTicker(symbol, callback) {
+    const WebSocket = require('ws');
+    const stream = `${this.normalizeSymbol(symbol).toLowerCase()}@ticker`;
+    const host = this.isTestnet
+      ? 'wss://testnet.binance.vision/ws'
+      : 'wss://stream.binance.com:9443/ws';
+    const ws = new WebSocket(`${host}/${stream}`);
+    const id = `binance_ticker_${stream}_${Date.now()}`;
+    ws.on('message', (raw) => {
+      try {
+        const data = JSON.parse(raw.toString());
+        callback({
+          symbol,
+          price: parseFloat(data.c),
+          bid: parseFloat(data.b),
+          ask: parseFloat(data.a),
+          timestamp: Date.now(),
+        });
+      } catch { /* ignore */ }
+    });
+    ws.on('error', () => {});
+    this._tickerSubs = this._tickerSubs || new Map();
+    this._tickerSubs.set(id, ws);
+    return id;
+  }
+
+  async unsubscribe(subscriptionId) {
+    if (this._tickerSubs?.has(subscriptionId)) {
+      this._tickerSubs.get(subscriptionId).close();
+      this._tickerSubs.delete(subscriptionId);
+    }
+    return true;
+  }
+
   async subscribeToOrderBook(symbol, callback) { return null; }
   async subscribeToTrades(symbol, callback) { return null; }
-  async unsubscribe(subscriptionId) { return null; }
 }
 
 module.exports = { BinanceAdapter };

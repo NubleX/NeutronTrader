@@ -180,6 +180,21 @@ class StorageService {
         if (filters.side) {
             trades = trades.filter(t => t.side === filters.side);
         }
+        if (filters.source) {
+            trades = trades.filter(t => t.source === filters.source);
+        }
+        if (filters.arbType) {
+            trades = trades.filter(t => t.arbType === filters.arbType);
+        }
+        if (filters.minProfitPct != null) {
+            trades = trades.filter(t => parseFloat(t.netProfitPct || 0) >= filters.minProfitPct);
+        }
+        if (filters.buyExchange) {
+            trades = trades.filter(t => t.buyExchange === filters.buyExchange);
+        }
+        if (filters.sellExchange) {
+            trades = trades.filter(t => t.sellExchange === filters.sellExchange);
+        }
 
         trades.sort((a, b) => b.timestamp - a.timestamp);
 
@@ -236,6 +251,10 @@ class StorageService {
     async getAllSettings() {
         await this.initialize();
         return Object.fromEntries(this.cache.settings.entries());
+    }
+
+    async getArbHistory(filters = {}) {
+        return this.getTrades({ ...filters, source: 'arbitrage' });
     }
 
     async getTradeStatistics(filters = {}) {
