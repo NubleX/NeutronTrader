@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { computeArbitrageOpportunities } from '../utils/arbitrageFromSnapshot';
+import Spinner from './Spinner';
 
 const EXCHANGE_FEES = {
   binance: 0.001, coinbase: 0.006, kraken: 0.0026, okx: 0.001, bybit: 0.001,
@@ -159,7 +160,11 @@ export default function Dashboard({
           ))}
         </div>
         {symbols.length === 0 ? (
-          <div style={{ color: '#444', padding: '20px 0' }}>Waiting for price data...</div>
+          status === 'CONNECTING' ? (
+            <Spinner message="Loading price data..." />
+          ) : (
+            <div style={{ color: '#444', padding: '20px 0' }}>Waiting for price data...</div>
+          )
         ) : symbols.map(symbol => {
           const row = bySymbol[symbol] || {};
           const prices = EXCHANGES.map(ex => row[ex]?.price).filter(Boolean);

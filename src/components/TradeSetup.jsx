@@ -9,6 +9,7 @@ import {
   stopTradingBot, 
   registerTradingBotListeners 
 } from '../services/binanceService';
+import Spinner from './Spinner';
 
 // Safely get the api object (for Electron)
 const getApi = () => {
@@ -26,6 +27,8 @@ function TradeSetup({ apiConfig }) {
     isActive: false
   });
   const [statusMessage, setStatusMessage] = useState('');
+  const [isFetchingBalances, setIsFetchingBalances] = useState(false);
+  const [isTogglingBot, setIsTogglingBot] = useState(false);
   const [balances, setBalances] = useState({
     base: { asset: 'BNB', free: 0 },
     quote: { asset: 'USDT', free: 0 }
@@ -45,6 +48,7 @@ function TradeSetup({ apiConfig }) {
   // Define fetchBalances function to be reused
   const fetchBalances = async () => {
     if (apiConfig.isConfigured) {
+      setIsFetchingBalances(true);
       try {
         const { baseAsset, quoteAsset } = getAssets(formData.symbol);
         
@@ -58,6 +62,8 @@ function TradeSetup({ apiConfig }) {
       } catch (err) {
         console.error('Error fetching balances:', err);
         setStatusMessage(`Error fetching balances: ${err.message}`);
+      } finally {
+        setIsFetchingBalances(false);
       }
     }
   };
@@ -140,6 +146,7 @@ function TradeSetup({ apiConfig }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setIsTogglingBot(true);
     
     if (api) {
       api.send('start-trading-bot', {
@@ -163,11 +170,15 @@ function TradeSetup({ apiConfig }) {
         })
         .catch(error => {
           setStatusMessage(`Error: ${error.message}`);
+        })
+        .finally(() => {
+          setIsTogglingBot(false);
         });
     }
   };
 
   const handleStopBot = () => {
+    setIsTogglingBot(true);
     if (api) {
       api.send('stop-trading-bot', {});
       setStatusMessage('Stopping trading bot...');
@@ -183,6 +194,9 @@ function TradeSetup({ apiConfig }) {
         })
         .catch(error => {
           setStatusMessage(`Error: ${error.message}`);
+        })
+        .finally(() => {
+          setIsTogglingBot(false);
         });
     }
   };
@@ -199,6 +213,7 @@ function TradeSetup({ apiConfig }) {
             ...prev,
             isActive: data.status === 'started'
           }));
+          setIsTogglingBot(false);
           
           setStatusMessage(
             data.status === 'started' 
@@ -209,6 +224,7 @@ function TradeSetup({ apiConfig }) {
         
         onError: (error) => {
           console.error('Trading error:', error);
+          setIsTogglingBot(false);
           setStatusMessage(`Error: ${error}`);
         },
         
@@ -242,16 +258,20 @@ function TradeSetup({ apiConfig }) {
       {apiConfig.isConfigured && (
         <div className="balances-card card">
           <h3>Available Balances</h3>
-          <div className="balances">
-            <div className="balance-item">
-              <span>{balances.base.asset}:</span>
-              <span>{balances.base.free.toFixed(8)}</span>
+          {isFetchingBalances ? (
+            <Spinner message="Fetching account information..." small />
+          ) : (
+            <div className="balances">
+              <div className="balance-item">
+                <span>{balances.base.asset}:</span>
+                <span>{balances.base.free.toFixed(8)}</span>
+              </div>
+              <div className="balance-item">
+                <span>{balances.quote.asset}:</span>
+                <span>{balances.quote.free.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="balance-item">
-              <span>{balances.quote.asset}:</span>
-              <span>{balances.quote.free.toFixed(2)}</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
       
@@ -407,14 +427,25 @@ function TradeSetup({ apiConfig }) {
           <button 
             type="submit" 
             className="start-bot"
-            disabled={!apiConfig.isConfigured}
+            disabled={!apiConfig.isConfigured || isTogglingBot}
           >
-            Start Trading Bot on Testnet
+            {isTogglingBot ? 'Starting...' : 'Start Trading Bot on Testnet'}
           </button>
         ) : (
-          <button type="button" className="stop-bot" onClick={handleStopBot}>
-            Stop Trading Bot
+          <button
+            type="button"
+            className="stop-bot"
+            onClick={handleStopBot}
+            disabled={isTogglingBot}
+          >
+            {isTogglingBot ? 'Stopping...' : 'Stop Trading Bot'}
           </button>
+        )}
+        {isTogglingBot && (
+          <Spinner
+            message={formData.isActive ? 'Stopping trading bot...' : 'Starting trading bot...'}
+            small
+          />
         )}
       </form>
       

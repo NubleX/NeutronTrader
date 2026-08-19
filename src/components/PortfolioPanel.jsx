@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { getPortfolioSnapshot, getBscBalances } from '../services/portfolioService';
 import WalletButton from './WalletButton';
+import Spinner from './Spinner';
 
 const COLORS = ['#2196f3', '#4caf50', '#ff9800', '#f44336', '#9c27b0', '#00bcd4'];
 
@@ -117,6 +118,10 @@ export default function PortfolioPanel() {
         </div>
       )}
 
+      {loading && !snapshot ? (
+        <Spinner message="Fetching account information..." />
+      ) : (
+      <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
         <div className="card" style={{ padding: '16px' }}>
           <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>TOTAL VALUE (USDT)</div>
@@ -181,6 +186,8 @@ export default function PortfolioPanel() {
           ))
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

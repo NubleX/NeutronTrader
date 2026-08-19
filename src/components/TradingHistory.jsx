@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getTradeHistory } from '../services/binanceService';
+import Spinner from './Spinner';
 
 function TradingHistory({ apiConfig }) {
   const [trades, setTrades] = useState([]);
@@ -53,7 +54,7 @@ function TradingHistory({ apiConfig }) {
 
   const stats = calculateStats();
 
-  if (isLoading) return <div className="loading">Loading trade history...</div>;
+  if (isLoading) return <Spinner message="Loading trade history..." />;
   if (error) return <div className="error">Error: {error}</div>;
 
   return (
