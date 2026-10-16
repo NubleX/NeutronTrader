@@ -1,13 +1,6 @@
 # NeutronTrader Roadmap
 
-## v0.4.2 <- current
-
-- [x] **Dependency security sweep** - `npm audit fix` across the lockfile (shell-quote, axios, undici, tar, joi, brace-expansion, electron)
-- [ ] Remaining: 7 moderate `sprintf-js` findings via electron-builder (build-time only; awaiting upstream fix)
-
----
-
-## v0.4.1
+## v0.4.1 ← current
 
 What shipped in this release:
 

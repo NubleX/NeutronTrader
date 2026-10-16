@@ -1,19 +1,17 @@
 <div align="center">
   <img src="assets/neutron_logo.jpg" alt="NeutronTrader Logo" width="600"/>
 
-# NeutronTrader v0.4.2
+# NeutronTrader v0.4.1
 
 ![License](https://img.shields.io/badge/license-GPL%20v3-blue.svg)
-![Version](https://img.shields.io/badge/version-0.4.2-orange.svg)
+![Version](https://img.shields.io/badge/version-0.4.1-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript%20%2B%20React-yellow.svg)
 ![Status](https://img.shields.io/badge/status-alpha--development-orange.svg)
 
 </div>
 
-## ⚠️ ALPHA VERSION WARNING ⚠️
-
-### Version: 0.4.2
+### Version: 0.4.1
 
 **A multi-exchange algorithmic trading desktop platform with live arbitrage detection, listing sniper, strategy backtesting, and DeFi integration — built with Electron and React.**
 
@@ -28,14 +26,6 @@ NeutronTrader started as a single-exchange Binance testnet bot and has grown int
 Everything runs as a desktop app via Electron — no cloud dependency, no subscription, no custody of your keys.
 
 ---
-
-## What's New in v0.4.2
-
-Security maintenance release, no feature changes:
-
-- **Dependency security fixes** - lockfile refreshed via `npm audit fix`; vulnerabilities down from 23 (2 critical, 13 high) to 7 moderate
-- Patched: shell-quote (critical), axios, undici, tar, joi, brace-expansion, and others; Electron now resolves to 42.11.15
-- Remaining 7 moderate findings are the build-time-only `sprintf-js` chain under electron-builder; the only npm fix is a breaking downgrade, so it is deferred
 
 ## What's New in v0.4.1
 
